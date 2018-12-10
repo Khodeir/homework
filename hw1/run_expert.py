@@ -18,6 +18,7 @@ import importlib
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('expert_policy_file', type=str)
+    parser.add_argument('envname', type=str)
     parser.add_argument('--render', action='store_true')
     parser.add_argument("--max_timesteps", type=int)
     parser.add_argument('--num_rollouts', type=int, default=20,
@@ -62,10 +63,11 @@ def main():
     print('std of return', np.std(returns))
 
     expert_data = {'observations': np.array(observations),
-                    'actions': np.array(actions)}
+                    'actions': np.array(actions),
+                    'returns': returns}
 
-        with open(os.path.join('expert_data', args.envname + '.pkl'), 'wb') as f:
-            pickle.dump(expert_data, f, pickle.HIGHEST_PROTOCOL)
+    with open(os.path.join('expert_data', args.envname + '.pkl'), 'wb') as f:
+        pickle.dump(expert_data, f, pickle.HIGHEST_PROTOCOL)
 
 if __name__ == '__main__':
     main()

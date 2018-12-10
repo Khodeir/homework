@@ -6,6 +6,7 @@ ex = sacred.Experiment('behavior_cloning')
 from sacred.observers import FileStorageObserver
 ex.observers.append(FileStorageObserver.create('my_runs'))
 
+
 class Environment():
     def __init__(self, envname):
         import gym, roboschool
@@ -174,6 +175,7 @@ def get_params():
     lambda_l2 = 0
     num_test_rollouts = 100
     test_rollout_filename = '%s/test_rollouts.pkl' % model_dir
+    final_comparison_histpath = '%s/expert_rewards_comparsion.png' % model_dir
 
 @ex.named_config
 def half_cheetah():
@@ -236,10 +238,34 @@ def train_command(_config):
     params = _config
     train(params)
 
+@ex.command(unobserved=True)
+def analyze(_config):
+    params = _config
+    with open(params['test_rollout_filename'], 'rb') as open_file:
+        clone_rollouts = pickle.load(open_file)
+    clone_total_rewards = [np.sum(rollout) for rollout in clone_rollouts['rewards']]
+    with open(params['data_path'], 'rb') as open_file:
+        expert_rollouts = pickle.load(open_file)
+    expert_total_rewards = expert_rollouts['returns']
+
+
+    print('Expert Rewards: MEAN=%.2f, STD=%.2f' % (np.mean(expert_total_rewards), np.std(expert_total_rewards)))
+    print('Clone Rewards: MEAN=%.2f, STD=%.2f' % (np.mean(clone_total_rewards), np.std(clone_total_rewards)))
+    import seaborn as sns
+    hist = sns.distplot(expert_total_rewards, label='expert')
+    hist = sns.distplot(clone_total_rewards, label='clone')
+    figure = hist.get_figure()
+    figure.legend()
+    figure.savefig(params['final_comparison_histpath'], dpi=400)
+    # plt.hist(clone_total_rewards, name='clone')
+    # plt.savefig('example.png')
+
 @ex.automain
 def main(_config):
     params = _config
     train(params)
     test_policy(params)
     ex.add_artifact(_config['test_rollout_filename'])
+    analyze(_config)
+    ex.add_artifact(_config['final_comparison_histpath'])
 
