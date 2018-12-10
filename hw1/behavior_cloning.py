@@ -6,11 +6,11 @@ ex = sacred.Experiment('behavior_cloning')
 from sacred.observers import FileStorageObserver
 ex.observers.append(FileStorageObserver.create('my_runs'))
 
-
 class Environment():
-    def __init__(self, envname):
+    def __init__(self, envname, should_render=False):
         import gym, roboschool
         self.env = gym.make(envname)
+        self.should_render = should_render
         self.reset()
         self.dim_observations = len(self.env.observation_space.high)
         self.dim_actions = len(self.env.action_space.high)
@@ -35,6 +35,8 @@ class Environment():
         yield [obs]
         done = False
         while not done:
+            if self.should_render:
+                self.env.render()
             # self.sleep_until_action_ready()
             obs, reward, done, info = self.env.step(self.action)
 
@@ -45,14 +47,44 @@ class Environment():
             self.rewards.append(self.reward)
             self.action = None # reset action
             self.steps += 1
-            # print('OBS', obs, done, info)
             yield [obs]
 
+
+class ExportedModelPolicy():
+    def __init__(self, exported_model_base):
+        self.sess = tf.Session()
+        tf.saved_model.loader.load(self.sess, [tf.saved_model.tag_constants.SERVING], exported_model_base)
+    def act(self, observation):
+        action = self.sess.graph.get_tensor_by_name('final_output:0')
+        return self.sess.run(action, feed_dict={"observation:0": observation})
+
+
+def test_exported_policy(params):
+    policy = ExportedModelPolicy(exported_model_base=params['exported_model_base'])
+    env = Environment(params['env'][:-3], should_render=params['should_render'])
+
+    rewards, observations, actions = [], [], []
+    for rollout in range(params['num_test_rollouts']):
+        for observation in env.generator():
+            # env.set_action(policy.act(action['observations']))
+            action = policy.act(observation)
+            env.set_action(action[0])
+
+        rewards.append(env.rewards.copy())
+        observations.append(env.observations.copy())
+        actions.append(env.actions.copy())
+
+    rollouts = dict(rewards=rewards, actions=actions, observations=observations)
+
+    with open(params['test_rollout_filename'], 'wb') as out_file:
+        pickle.dump(rollouts, out_file)
+
+    return rollouts
 
 
 def test_policy(params):
     estimator = get_estimator(params)
-    env = Environment(params['env'][:-3])
+    env = Environment(params['env'][:-3], should_render=params['should_render'])
     # policy = get_roboschool_policy('experts/'+params['env'])
     input_fn  = lambda: tf.data.Dataset.from_generator(
         env.generator, tf.float32, tf.TensorShape([1, env.dim_observations])
@@ -124,19 +156,21 @@ def model_fn(features, labels, mode, params):
     r2 = relu2(r1)
     z = lin1(r2)
 
+    Y = tf.identity(z, name='final_output')
+
     if mode == tf.estimator.ModeKeys.PREDICT:
         return tf.estimator.EstimatorSpec(
             mode,
             predictions={
-                'actions': z,
+                'actions': Y,
                 'observations': X
             }
         )
     l2 = tf.add_n([ tf.nn.l2_loss(v) for v in tf.trainable_variables() ]) * params['lambda_l2']
-    mse = tf.losses.mean_squared_error(labels, z)
+    mse = tf.losses.mean_squared_error(labels, Y)
     loss = l2 + mse
 
-    metrics = {"mse": tf.metrics.mean_squared_error(labels, z)}
+    metrics = {"mse": tf.metrics.mean_squared_error(labels, Y)}
 
     if mode == tf.estimator.ModeKeys.EVAL:
         return tf.estimator.EstimatorSpec(
@@ -176,6 +210,8 @@ def get_params():
     num_test_rollouts = 100
     test_rollout_filename = '%s/test_rollouts.pkl' % model_dir
     final_comparison_histpath = '%s/expert_rewards_comparsion.png' % model_dir
+    exported_model_base = '%s/exports/' % model_dir
+    should_render = False
 
 @ex.named_config
 def half_cheetah():
@@ -234,9 +270,28 @@ def test_policy_command(_config):
     ex.add_artifact(_config['test_rollout_filename'])
 
 @ex.command
+def test_exported_policy_command(_config):
+    params = _config
+    test_exported_policy(params)
+    ex.add_artifact(_config['test_rollout_filename'])
+
+@ex.command
 def train_command(_config):
     params = _config
     train(params)
+
+@ex.command(unobserved=True)
+def export_model(_config):
+    params = _config
+    estimator = get_estimator(params)
+    def serving_input_receiver_fn():
+        feat = tf.placeholder(dtype=tf.float32, shape=(1, 44), name='observation')
+        return tf.estimator.export.TensorServingInputReceiver(features=feat, receiver_tensors=feat)
+
+    estimator.export_savedmodel(
+        params['exported_model_base'],
+        serving_input_receiver_fn
+    )
 
 @ex.command(unobserved=True)
 def analyze(_config):
