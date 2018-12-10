@@ -2,8 +2,79 @@ import numpy as np
 import tensorflow as tf
 import sacred
 import pickle
-from sacred.stflow import LogFileWriter
 ex = sacred.Experiment('behavior_cloning')
+from sacred.observers import FileStorageObserver
+ex.observers.append(FileStorageObserver.create('my_runs'))
+
+class Environment():
+    def __init__(self, envname):
+        import gym, roboschool
+        self.env = gym.make(envname)
+        self.reset()
+        self.dim_observations = len(self.env.observation_space.high)
+        self.dim_actions = len(self.env.action_space.high)
+
+    def set_action(self, action):
+        self.action = action
+
+    def reset(self):
+        self.action = None
+        self.steps = 0
+        self.observations = []
+        self.actions = []
+        self.rewards = []
+
+    def sleep_until_action_ready(self):
+        while self.action is None:
+            time.sleep(0.5)
+
+    def generator(self):
+        self.reset()
+        obs = self.env.reset()
+        yield [obs]
+        done = False
+        while not done:
+            # self.sleep_until_action_ready()
+            obs, reward, done, info = self.env.step(self.action)
+
+            self.observation = obs
+            self.reward = reward
+            self.actions.append(self.action)
+            self.observations.append(self.observation)
+            self.rewards.append(self.reward)
+            self.action = None # reset action
+            self.steps += 1
+            # print('OBS', obs, done, info)
+            yield [obs]
+
+
+
+def test_policy(params):
+    estimator = get_estimator(params)
+    env = Environment(params['env'][:-3])
+    # policy = get_roboschool_policy('experts/'+params['env'])
+    input_fn  = lambda: tf.data.Dataset.from_generator(
+        env.generator, tf.float32, tf.TensorShape([1, env.dim_observations])
+    ).make_one_shot_iterator().get_next()
+    # with tf.Session() as sess:
+    #     sess.run(iter.initializer)
+    #     x = sess.run(input_fn())
+    #     print(x.shape)
+    rewards, observations, actions = [], [], []
+    for rollout in range(params['num_test_rollouts']):
+        for action in estimator.predict(input_fn):
+            # env.set_action(policy.act(action['observations']))
+            env.set_action(action['actions'])
+        rewards.append(env.rewards.copy())
+        observations.append(env.observations.copy())
+        actions.append(env.actions.copy())
+
+    rollouts = dict(rewards=rewards, actions=actions, observations=observations)
+
+    with open(params['test_rollout_filename'], 'wb') as out_file:
+        pickle.dump(rollouts, out_file)
+
+    return rollouts
 
 def get_dataset(params):
     actions, observations = read_data(params['data_path'])
@@ -20,7 +91,6 @@ def get_estimator(params):
     )
     return estimator
 
-@LogFileWriter(ex)
 def train(params):
     dataset, num_datapoints = get_dataset(params)
     train_size = int(0.9*num_datapoints)
@@ -93,48 +163,83 @@ def model_fn(features, labels, mode, params):
 @ex.config
 def get_params():
     relu1_size = 128
-    relu2_size = 128
+    relu2_size = 64
     learning_rate = 0.1
     batch_size = 10
-    max_epochs = 10
     env = 'RoboschoolHalfCheetah-v1.py'
-    num_epochs = 50
+    num_epochs = 25
     actions_dim = 6
     model_dir = 'models/half-cheetah'
+    data_path = 'expert_data/RoboschoolHalfCheetah-v1.py-100.pkl'
     lambda_l2 = 0
-    data_path = 'expert_data/RoboschoolHalfCheetah-v1.py.pkl'
-
+    num_test_rollouts = 100
+    test_rollout_filename = '%s/test_rollouts.pkl' % model_dir
 
 @ex.named_config
 def half_cheetah():
-    relu1_size = 128
-    relu2_size = 128
-    learning_rate = 0.1
-    batch_size = 10
-    max_epochs = 10
     env = 'RoboschoolHalfCheetah-v1.py'
-    num_epochs = 50
+    num_epochs = 25
     actions_dim = 6
     model_dir = 'models/half-cheetah'
-    lambda_l2 = 0
-    data_path = 'expert_data/RoboschoolHalfCheetah-v1.py.pkl'
+    data_path = 'expert_data/RoboschoolHalfCheetah-v1.py-100.pkl'
 
 @ex.named_config
 def ant():
-    relu1_size = 128
-    relu2_size = 128
-    learning_rate = 0.1
-    batch_size = 10
-    max_epochs = 10
     env = 'RoboschoolAnt-v1.py'
-    num_epochs = 100
+    num_epochs = 25
     actions_dim = 8
     model_dir = 'models/ant'
-    lambda_l2 = 0
-    data_path = 'expert_data/RoboschoolAnt-v1.py.pkl'
+    data_path = 'expert_data/RoboschoolAnt-v1.py-100.pkl'
+
+@ex.named_config
+def hopper():
+    env = 'RoboschoolHopper-v1.py'
+    num_epochs = 25
+    actions_dim = 3
+    model_dir = 'models/hopper'
+    data_path = 'expert_data/RoboschoolHopper-v1.py-100.pkl'
+
+@ex.named_config
+def humanoid():
+    relu1_size = 256
+    relu1_size = 128
+    env = 'RoboschoolHumanoid-v1.py'
+    num_epochs = 25
+    actions_dim = 17
+    model_dir = 'models/humanoid'
+    data_path = 'expert_data/RoboschoolHumanoid-v1.py-100.pkl'
+
+@ex.named_config
+def reacher():
+    env = 'RoboschoolReacher-v1.py'
+    num_epochs = 25
+    actions_dim = 2
+    model_dir = 'models/reacher'
+    data_path = 'expert_data/RoboschoolReacher-v1.py-100.pkl'
+
+@ex.named_config
+def walker():
+    env = 'RoboschoolWalker2d-v1.py'
+    num_epochs = 25
+    actions_dim = 6
+    model_dir = 'models/walker'
+    data_path = 'expert_data/RoboschoolWalker2d-v1.py-100.pkl'
+
+@ex.command
+def test_policy_command(_config):
+    params = _config
+    test_policy(params)
+    ex.add_artifact(_config['test_rollout_filename'])
+
+@ex.command
+def train_command(_config):
+    params = _config
+    train(params)
 
 @ex.automain
 def main(_config):
     params = _config
     train(params)
+    test_policy(params)
+    ex.add_artifact(_config['test_rollout_filename'])
 
