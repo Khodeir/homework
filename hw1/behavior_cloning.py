@@ -113,8 +113,10 @@ def get_dataset(params):
     actions, observations = read_data(params['data_path'])
     num_datapoints, dim_observations = np.shape(observations)
     dataset = tf.data.Dataset.from_tensor_slices((observations, actions))
+    datapoints_to_use = int(params['use_data_prop'] * num_datapoints)
+    dataset = dataset.take(datapoints_to_use)
     # dataset = dataset
-    return dataset, num_datapoints
+    return dataset, datapoints_to_use
 
 def get_estimator(params):
     estimator = tf.estimator.Estimator(
@@ -124,7 +126,7 @@ def get_estimator(params):
     )
     return estimator
 
-def train(params):
+def train_and_evaluate(params):
     dataset, num_datapoints = get_dataset(params)
     train_size = int(0.9*num_datapoints)
     train, eval_set = dataset.take(train_size), dataset.skip(train_size)
@@ -138,6 +140,13 @@ def train(params):
     for epoch in range(params['num_epochs']):
         tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
 
+def train(params):
+    dataset, num_datapoints = get_dataset(params)
+    dataset = dataset.shuffle(num_datapoints).batch(params['batch_size'])
+    train_input_fn = lambda: dataset.make_one_shot_iterator().get_next()
+    estimator = get_estimator(params)
+    num_steps = num_datapoints * params['num_epochs']
+    estimator.train(train_input_fn, steps=num_steps)
 
 def read_data(data_path):
     with open(data_path, 'rb') as raw_file:
@@ -197,6 +206,7 @@ def model_fn(features, labels, mode, params):
 
 @ex.config
 def get_params():
+    use_data_prop = 1.
     relu1_size = 128
     relu2_size = 64
     learning_rate = 0.1
@@ -207,7 +217,7 @@ def get_params():
     model_dir = 'models/half-cheetah'
     data_path = 'expert_data/RoboschoolHalfCheetah-v1.py-100.pkl'
     lambda_l2 = 0
-    num_test_rollouts = 100
+    num_test_rollouts = 200
     test_rollout_filename = '%s/test_rollouts.pkl' % model_dir
     final_comparison_histpath = '%s/expert_rewards_comparsion.png' % model_dir
     exported_model_base = '%s/exports/' % model_dir
@@ -303,7 +313,7 @@ def analyze(_config):
         expert_rollouts = pickle.load(open_file)
     expert_total_rewards = expert_rollouts['returns']
 
-
+    print(clone_total_rewards)
     print('Expert Rewards: MEAN=%.2f, STD=%.2f' % (np.mean(expert_total_rewards), np.std(expert_total_rewards)))
     print('Clone Rewards: MEAN=%.2f, STD=%.2f' % (np.mean(clone_total_rewards), np.std(clone_total_rewards)))
     import seaborn as sns
