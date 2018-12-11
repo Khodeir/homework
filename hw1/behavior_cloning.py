@@ -142,10 +142,9 @@ def train_and_evaluate(params):
 
 def train(params):
     dataset, num_datapoints = get_dataset(params)
-    dataset = dataset.shuffle(num_datapoints).batch(params['batch_size'])
+    dataset = dataset.shuffle(num_datapoints).batch(params['batch_size']).repeat()
     train_input_fn = lambda: dataset.make_one_shot_iterator().get_next()
     estimator = get_estimator(params)
-    num_steps = num_datapoints * params['num_epochs']
     estimator.train(train_input_fn, steps=num_steps)
 
 def read_data(data_path):
