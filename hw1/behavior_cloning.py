@@ -114,15 +114,16 @@ def analyze(_config):
     with open(params['data_path'], 'rb') as open_file:
         expert_rollouts = pickle.load(open_file)
     expert_total_rewards = expert_rollouts['returns']
-
-    print(clone_total_rewards)
     print('Expert Rewards: MEAN=%.2f, STD=%.2f' % (np.mean(expert_total_rewards), np.std(expert_total_rewards)))
     print('Clone Rewards: MEAN=%.2f, STD=%.2f' % (np.mean(clone_total_rewards), np.std(clone_total_rewards)))
+    import matplotlib
+    matplotlib.use('Agg')
     import seaborn as sns
+    import matplotlib.pyplot as plt
     hist = sns.distplot(expert_total_rewards, label='expert')
     hist = sns.distplot(clone_total_rewards, label='clone')
     figure = hist.get_figure()
-    figure.legend()
+    plt.legend()
     figure.savefig(params['final_comparison_histpath'], dpi=400)
     # plt.hist(clone_total_rewards, name='clone')
     # plt.savefig('example.png')

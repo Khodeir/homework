@@ -1,0 +1,1 @@
+python behavior_cloning.py test_exported_policy_command with humanoid should_render=True num_test_rollouts=1 exported_model_base=models/humanoid-dagger/exports/1544642662
