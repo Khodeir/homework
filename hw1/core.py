@@ -166,6 +166,16 @@ def read_data(data_path):
     observations = np.array(observations).astype('float32')
     return actions, observations
 
+def export_estimator(estimator, base):
+    def serving_input_receiver_fn():
+        feat = tf.placeholder(dtype=tf.float32, shape=(1, 44), name='observation')
+        return tf.estimator.export.TensorServingInputReceiver(features=feat, receiver_tensors=feat)
+
+    estimator.export_savedmodel(
+        base,
+        serving_input_receiver_fn
+    )
+
 def model_fn(features, labels, mode, params):
     relu1 = tf.layers.Dense(params['relu1_size'], activation=tf.nn.relu, name='relu1')
     relu2 = tf.layers.Dense(params['relu2_size'], activation=tf.nn.relu, name='relu2')

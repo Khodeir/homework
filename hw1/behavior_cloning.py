@@ -94,18 +94,16 @@ def train_command(_config):
     params = _config
     train(params)
 
+
+
 @ex.command(unobserved=True)
 def export_model(_config):
     params = _config
     estimator = get_estimator(params)
-    def serving_input_receiver_fn():
-        feat = tf.placeholder(dtype=tf.float32, shape=(1, 44), name='observation')
-        return tf.estimator.export.TensorServingInputReceiver(features=feat, receiver_tensors=feat)
+    export_estimator(estimator, params['exported_model_base'])
 
-    estimator.export_savedmodel(
-        params['exported_model_base'],
-        serving_input_receiver_fn
-    )
+
+
 
 @ex.command(unobserved=True)
 def analyze(_config):
