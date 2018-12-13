@@ -6,7 +6,7 @@ from core import *
 ex = sacred.Experiment('dagger')
 from sacred.observers import FileStorageObserver
 ex.observers.append(FileStorageObserver.create('dagger_runs'))
-from shutil import copyfile, move, copytree
+from shutil import copyfile, move, copytree, rmtree
 
 
 @ex.config
@@ -29,7 +29,8 @@ def humanoid():
     data_path = 'dagger_data/RoboschoolHumanoid-v1.py-10.pkl'
     num_test_rollouts = 10
     num_episodes = 100
-    num_steps = 2000 # for training
+    num_steps = 80000 # for training
+    start_from_scratch = True
 
 def aggregate_datasets(params):
     actions, observations = read_data(params['data_path'])
@@ -91,7 +92,9 @@ def train_dagger(_config, _run):
         for key in metrics:
             _run.log_scalar(key, metrics[key], episode)
         aggregate_datasets(params)
-        ex.add_artifact(params['test_rollout_filename'], 'rollouts %d' % episode)
+        ex.add_artifact(params['test_rollout_filename'], 'rollouts %d.pkl' % episode)
+        if params['start_from_scratch']:
+            rmtree(params['model_dir'])
         # copyfile(params['test_rollout_filename'], '%s/%s.%d' % (params['model_dir'], params['test_rollout_filename'], episode))
         # copytree(params['model_dir'],  params['model_dir'] + '.%s' % episode)
 
