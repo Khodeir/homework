@@ -28,7 +28,7 @@ def humanoid():
     initial_rollout = 'expert_data/RoboschoolHumanoid-v1.py-10.pkl'
     data_path = 'dagger_data/RoboschoolHumanoid-v1.py-10.pkl'
     num_test_rollouts = 10
-    num_episodes = 100
+    num_episodes = 20
     num_steps = 80000 # for training
     start_from_scratch = True
 

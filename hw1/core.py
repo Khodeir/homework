@@ -118,6 +118,7 @@ def test_policy_estimator(params):
     return rollouts
 
 def get_dataset(params):
+    # TODO: https://stackoverflow.com/questions/52266000/avoiding-tf-data-dataset-from-tensor-slices-with-estimator-api
     actions, observations = read_data(params['data_path'])
     num_datapoints, dim_observations = np.shape(observations)
     dataset = tf.data.Dataset.from_tensor_slices((observations, actions))

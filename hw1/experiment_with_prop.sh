@@ -8,4 +8,5 @@ do
 done
 
 docker wait $var
-docker run --user user -v `pwd`:/home/user/deeprlhw1:rw -w /home/user/deeprlhw1 roboschool-cpu-vnc:latest python generate_box_and_whisker.py
+docker run --user user --name boxplot -v `pwd`:/home/user/deeprlhw1:rw -w /home/user/deeprlhw1 roboschool-cpu-vnc:latest python generate_box_and_whisker.py
+docker wait boxplot
