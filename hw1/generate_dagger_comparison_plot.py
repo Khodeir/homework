@@ -8,9 +8,18 @@ from glob import glob
 import pickle
 
 import numpy as np
+import re
+
+num_re = re.compile(r'(\d+)[^0-9]*$')
+def get_last_num_in_str(path):
+    match = num_re.search(path)
+    return int(match.group(1)) if match else None
 
 data = []
-rollout_data = sorted([(int(path.replace('dagger_runs/5/rollouts ', '')), path) for path in glob('dagger_runs/5/rollouts*')])
+runs = sorted([(get_last_num_in_str(run_dir), run_dir) for run_dir in glob('dagger_runs/*') if get_last_num_in_str(run_dir)])
+run_num, run_dir = runs[-1]
+
+rollout_data = sorted([(get_last_num_in_str(path), path) for path in glob('%s/rollouts*' % run_dir)])
 for (step, rollout_path) in rollout_data:
     with open(rollout_path, 'rb') as open_file:
         rollout = pickle.load(open_file)
