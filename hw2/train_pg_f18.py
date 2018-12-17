@@ -15,6 +15,9 @@ from multiprocessing import Process
 #============================================================================================#
 # Utilities
 #============================================================================================#
+def get_elements(data, indices):
+    indeces = tf.range(0, tf.shape(indices)[0])*data.shape[1] + indices
+    return tf.gather(tf.reshape(data, [-1]), indeces)
 
 #========================================================================================#
 #                           ----------PROBLEM 2----------
@@ -38,14 +41,14 @@ def build_mlp(input_placeholder, output_size, scope, n_layers, size, activation=
         Hint: use tf.layers.dense    
     """
     # YOUR CODE HERE
-    with tf.variable_scope(scope):
-        hiddens = [tf.layers.dense(size, activation=activation, name='hidden_%d' % layer_num) for layer_num in range(n_layers)]
-        output_layer = [tf.layers.dense(output_size, activation=output_activation, name='output')]
+    with tf.variable_scope(scope, reuse=tf.AUTO_REUSE):
+        # hiddens = [tf.layers.dense(size, activation=activation, name='hidden_%d' % layer_num) for layer_num in ]
+        # output_layer = [tf.layers.dense(output_size, activation=output_activation, name='output')]
 
         output_placeholder = input_placeholder
-        for layer in hiddens:
-            output_placeholder = layer(output_placeholder)
-        return output_layer(output_placeholder)
+        for layer_num in range(n_layers):
+            output_placeholder = tf.layers.dense(output_placeholder, size, activation=activation, name='hidden_%d' % layer_num)
+        return tf.layers.dense(output_placeholder, output_size, activation=output_activation, name='output')
 
 def pathlength(path):
     return len(path["reward"])
@@ -107,7 +110,7 @@ class Agent(object):
         else:
             sy_ac_na = tf.placeholder(shape=[None, self.ac_dim], name="ac", dtype=tf.float32) 
         # YOUR CODE HERE
-        sy_adv_n = tf.placeholder(shape=[None, 1], name="adv", dtype=tf.float32)
+        sy_adv_n = tf.placeholder(shape=[None], name="adv", dtype=tf.float32)
         return sy_ob_no, sy_ac_na, sy_adv_n
 
 
@@ -180,7 +183,7 @@ class Agent(object):
         if self.discrete:
             sy_logits_na = policy_parameters
             # YOUR_CODE_HERE
-            sy_sampled_ac = tf.random.multinomial(sy_logits_na, 1)
+            sy_sampled_ac = tf.random.multinomial(sy_logits_na, 1)[:,0]
         else:
             sy_mean, sy_logstd = policy_parameters
             # YOUR_CODE_HERE
@@ -216,7 +219,9 @@ class Agent(object):
         if self.discrete:
             sy_logits_na = policy_parameters
             # YOUR_CODE_HERE
-            sy_logprob_n = tf.math.log(policy_parameters[sy_logits_na])
+            sy_probs_na = tf.nn.softmax(sy_logits_na)
+            sy_probs_n = get_elements(sy_probs_na, sy_ac_na)
+            sy_logprob_n = tf.math.log(sy_probs_n)
         else:
             sy_mean, sy_logstd = policy_parameters
             # YOUR_CODE_HERE
@@ -262,7 +267,8 @@ class Agent(object):
         #                           ----------PROBLEM 2----------
         # Loss Function and Training Operation
         #========================================================================================#
-        loss = -tf.reduce_mean(self.sy_logprob_n * self.sy_adv_n)
+        x = self.sy_logprob_n * self.sy_adv_n
+        loss = -tf.reduce_mean(x)
         self.update_op = tf.train.AdamOptimizer(self.learning_rate).minimize(loss)
 
         #========================================================================================#
@@ -310,8 +316,9 @@ class Agent(object):
             #====================================================================================#
             #                           ----------PROBLEM 3----------
             #====================================================================================#
-            raise NotImplementedError
-            ac = None # YOUR CODE HERE
+
+            # ac = self.sample_action(self.policy_forward_pass(obs[-1:]))
+            ac = self.sess.run(self.sy_sampled_ac,  feed_dict={self.sy_ob_no: obs[-1:]})
             ac = ac[0]
             acs.append(ac)
             ob, rew, done, _ = env.step(ac)
@@ -394,10 +401,25 @@ class Agent(object):
             like the 'ob_no' and 'ac_na' above. 
         """
         # YOUR_CODE_HERE
+        discounts = np.array([self.gamma ** index for index in range(self.max_path_length)])
         if self.reward_to_go:
-            raise NotImplementedError
+            def discount_func(episode):
+                # print('episode', episode)
+                episode_length = episode.shape[0]
+                discounted_episode_rewards = episode * discounts[:episode_length]
+                # print('discounted', discounted_episode_rewards)
+                discounted_episode_rewards = np.cumsum(discounted_episode_rewards[::-1])[::-1]
+                # print('discounted + causality', discounted_episode_rewards)
+                return discounted_episode_rewards
+
+            q_n = np.array([q for episode in re_n for q in discount_func(episode)])
         else:
-            raise NotImplementedError
+            def discount_func(episode):
+                episode_length = episode.shape[0]
+                discounted_episode_reward = np.sum(episode * discounts[:episode_length])
+                result = np.ones((episode_length,)) * discounted_episode_reward
+                return result
+            q_n = np.array([q for episode in re_n for q in discount_func(episode)])
         return q_n
 
     def compute_advantage(self, ob_no, q_n):
@@ -464,8 +486,7 @@ class Agent(object):
         if self.normalize_advantages:
             # On the next line, implement a trick which is known empirically to reduce variance
             # in policy gradient methods: normalize adv_n to have mean zero and std=1.
-            raise NotImplementedError
-            adv_n = None # YOUR_CODE_HERE
+            adv_n = (adv_n - np.mean(adv_n)) / np.std(adv_n)
         return q_n, adv_n
 
     def update_parameters(self, ob_no, ac_na, q_n, adv_n):
@@ -516,7 +537,13 @@ class Agent(object):
         # and after an update, and then log them below. 
 
         # YOUR_CODE_HERE
-        raise NotImplementedError
+        input_dict = {
+            self.sy_ob_no: ob_no,
+            self.sy_ac_na: ac_na,
+            self.sy_adv_n: adv_n,
+        }
+        print(ob_no.shape, ac_na.shape, adv_n.shape)
+        self.sess.run(self.update_op, feed_dict=input_dict)
 
 
 def train_PG(
@@ -594,7 +621,6 @@ def train_PG(
 
     # build computation graph
     agent.build_computation_graph()
-
     # tensorflow: config, session, variable initialization
     agent.init_tf_sess()
 
