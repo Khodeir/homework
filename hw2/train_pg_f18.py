@@ -38,8 +38,14 @@ def build_mlp(input_placeholder, output_size, scope, n_layers, size, activation=
         Hint: use tf.layers.dense    
     """
     # YOUR CODE HERE
-    raise NotImplementedError
-    return output_placeholder
+    with tf.variable_scope(scope):
+        hiddens = [tf.layers.dense(size, activation=activation, name='hidden_%d' % layer_num) for layer_num in range(n_layers)]
+        output_layer = [tf.layers.dense(output_size, activation=output_activation, name='output')]
+
+        output_placeholder = input_placeholder
+        for layer in hiddens:
+            output_placeholder = layer(output_placeholder)
+        return output_layer(output_placeholder)
 
 def pathlength(path):
     return len(path["reward"])
@@ -95,14 +101,13 @@ class Agent(object):
                 sy_ac_na: placeholder for actions
                 sy_adv_n: placeholder for advantages
         """
-        raise NotImplementedError
         sy_ob_no = tf.placeholder(shape=[None, self.ob_dim], name="ob", dtype=tf.float32)
         if self.discrete:
             sy_ac_na = tf.placeholder(shape=[None], name="ac", dtype=tf.int32) 
         else:
             sy_ac_na = tf.placeholder(shape=[None, self.ac_dim], name="ac", dtype=tf.float32) 
         # YOUR CODE HERE
-        sy_adv_n = None
+        sy_adv_n = tf.placeholder(shape=[None, 1], name="adv", dtype=tf.float32)
         return sy_ob_no, sy_ac_na, sy_adv_n
 
 
@@ -134,15 +139,15 @@ class Agent(object):
                 Pass in self.n_layers for the 'n_layers' argument, and
                 pass in self.size for the 'size' argument.
         """
-        raise NotImplementedError
         if self.discrete:
             # YOUR_CODE_HERE
-            sy_logits_na = None
+            sy_logits_na = build_mlp(self.sy_ob_no, self.ac_dim, "mlp", self.n_layers, self.size, activation=tf.tanh, output_activation=None)
             return sy_logits_na
         else:
             # YOUR_CODE_HERE
-            sy_mean = None
-            sy_logstd = None
+            sy_params = build_mlp(self.sy_ob_no, 2 * self.ac_dim, "mlp", self.n_layers, self.size, activation=tf.tanh, output_activation=None)
+            sy_mean = sy_params[:, :self.ac_dum]
+            sy_logstd = sy_params[:, self.ac_dum:]
             return (sy_mean, sy_logstd)
 
     #========================================================================================#
@@ -172,15 +177,14 @@ class Agent(object):
         
                  This reduces the problem to just sampling z. (Hint: use tf.random_normal!)
         """
-        raise NotImplementedError
         if self.discrete:
             sy_logits_na = policy_parameters
             # YOUR_CODE_HERE
-            sy_sampled_ac = None
+            sy_sampled_ac = tf.random.multinomial(sy_logits_na, 1)
         else:
             sy_mean, sy_logstd = policy_parameters
             # YOUR_CODE_HERE
-            sy_sampled_ac = None
+            sy_sampled_ac = sy_mean + tf.math.exp(sy_logstd) * tf.random.normal(sy_mean.shape, mean=0.0, stddev=1.0)
         return sy_sampled_ac
 
     #========================================================================================#
@@ -209,15 +213,15 @@ class Agent(object):
                 For the discrete case, use the log probability under a categorical distribution.
                 For the continuous case, use the log probability under a multivariate gaussian.
         """
-        raise NotImplementedError
         if self.discrete:
             sy_logits_na = policy_parameters
             # YOUR_CODE_HERE
-            sy_logprob_n = None
+            sy_logprob_n = tf.math.log(policy_parameters[sy_logits_na])
         else:
             sy_mean, sy_logstd = policy_parameters
             # YOUR_CODE_HERE
-            sy_logprob_n = None
+            sy_std = tf.math.exp(sy_logstd)
+            sy_logprob_n = (-1 * tf.math.pow((sy_ac_na - sy_mean), 2)/(2*tf.math.pow(sy_std, 2))) - tf.math.log(tf.math.sqrt(2*np.pi)*sy_std)
         return sy_logprob_n
 
     def build_computation_graph(self):
@@ -258,7 +262,7 @@ class Agent(object):
         #                           ----------PROBLEM 2----------
         # Loss Function and Training Operation
         #========================================================================================#
-        loss = None # YOUR CODE HERE
+        loss = -tf.reduce_mean(self.sy_logprob_n * self.sy_adv_n)
         self.update_op = tf.train.AdamOptimizer(self.learning_rate).minimize(loss)
 
         #========================================================================================#
