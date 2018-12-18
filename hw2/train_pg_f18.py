@@ -11,7 +11,8 @@ import os
 import time
 import inspect
 from multiprocessing import Process
-
+import json
+import math
 #============================================================================================#
 # Utilities
 #============================================================================================#
@@ -59,6 +60,8 @@ def setup_logger(logdir, locals_):
     # Log experimental parameters
     args = inspect.getargspec(train_PG)[0]
     params = {k: locals_[k] if k in locals_ else None for k in args}
+    # print(params.items())
+    # print(json.dumps(list(params.values())))
     logz.save_params(params)
 
 #============================================================================================#
@@ -70,6 +73,7 @@ class Agent(object):
         super(Agent, self).__init__()
         self.ob_dim = computation_graph_args['ob_dim']
         self.ac_dim = computation_graph_args['ac_dim']
+        print(self.ac_dim)
         self.discrete = computation_graph_args['discrete']
         self.size = computation_graph_args['size']
         self.n_layers = computation_graph_args['n_layers']
@@ -82,6 +86,7 @@ class Agent(object):
         self.gamma = estimate_return_args['gamma']
         self.reward_to_go = estimate_return_args['reward_to_go']
         self.nn_baseline = estimate_return_args['nn_baseline']
+        self.average_baseline = estimate_return_args['average_baseline']
         self.normalize_advantages = estimate_return_args['normalize_advantages']
 
     def init_tf_sess(self):
@@ -148,10 +153,9 @@ class Agent(object):
             return sy_logits_na
         else:
             # YOUR_CODE_HERE
-            sy_params = build_mlp(self.sy_ob_no, 2 * self.ac_dim, "mlp", self.n_layers, self.size, activation=tf.tanh, output_activation=None)
-            sy_mean = sy_params[:, :self.ac_dum]
-            sy_logstd = sy_params[:, self.ac_dum:]
-            return (sy_mean, sy_logstd)
+            sy_mean = build_mlp(self.sy_ob_no, self.ac_dim, "mlp", self.n_layers, self.size, activation=tf.tanh, output_activation=None)
+
+            return (sy_mean, self.sy_logstd)
 
     #========================================================================================#
     #                           ----------PROBLEM 2----------
@@ -187,7 +191,7 @@ class Agent(object):
         else:
             sy_mean, sy_logstd = policy_parameters
             # YOUR_CODE_HERE
-            sy_sampled_ac = sy_mean + tf.math.exp(sy_logstd) * tf.random.normal(sy_mean.shape, mean=0.0, stddev=1.0)
+            sy_sampled_ac = sy_mean + tf.math.exp(sy_logstd) * tf.random.normal(tf.shape(sy_mean), mean=0.0, stddev=1.0)
         return sy_sampled_ac
 
     #========================================================================================#
@@ -226,7 +230,7 @@ class Agent(object):
             sy_mean, sy_logstd = policy_parameters
             # YOUR_CODE_HERE
             sy_std = tf.math.exp(sy_logstd)
-            sy_logprob_n = (-1 * tf.math.pow((sy_ac_na - sy_mean), 2)/(2*tf.math.pow(sy_std, 2))) - tf.math.log(tf.math.sqrt(2*np.pi)*sy_std)
+            sy_logprob_n = -0.5 * tf.reduce_sum(tf.square((sy_ac_na - sy_mean) / sy_std), axis=1) - tf.math.log(tf.math.sqrt(2*np.pi*sy_std*sy_std))
         return sy_logprob_n
 
     def build_computation_graph(self):
@@ -251,6 +255,8 @@ class Agent(object):
                 to get the policy gradient.
         """
         self.sy_ob_no, self.sy_ac_na, self.sy_adv_n = self.define_placeholders()
+        if not self.discrete:
+            self.sy_logstd = tf.Variable(np.ones(self.ac_dim), trainable=True, dtype=tf.float32)
 
         # The policy takes in an observation and produces a distribution over the action space
         self.policy_parameters = self.policy_forward_pass(self.sy_ob_no)
@@ -267,7 +273,7 @@ class Agent(object):
         #                           ----------PROBLEM 2----------
         # Loss Function and Training Operation
         #========================================================================================#
-        x = self.sy_logprob_n * self.sy_adv_n
+        x = tf.multiply(self.sy_logprob_n, self.sy_adv_n)
         loss = -tf.reduce_mean(x)
         self.update_op = tf.train.AdamOptimizer(self.learning_rate).minimize(loss)
 
@@ -318,7 +324,7 @@ class Agent(object):
             #====================================================================================#
 
             # ac = self.sample_action(self.policy_forward_pass(obs[-1:]))
-            ac = self.sess.run(self.sy_sampled_ac,  feed_dict={self.sy_ob_no: obs[-1:]})
+            ac = self.sess.run(self.sy_sampled_ac,  feed_dict={self.sy_ob_no: ob[None]})
             ac = ac[0]
             acs.append(ac)
             ob, rew, done, _ = env.step(ac)
@@ -401,28 +407,28 @@ class Agent(object):
             like the 'ob_no' and 'ac_na' above. 
         """
         # YOUR_CODE_HERE
-        discounts = np.array([self.gamma ** index for index in range(self.max_path_length)])
+        episode_lengths = map(len, re_n)
         if self.reward_to_go:
-            def discount_func(episode):
-                # print('episode', episode)
-                episode_length = episode.shape[0]
-                discounted_episode_rewards = episode * discounts[:episode_length]
-                # print('discounted', discounted_episode_rewards)
-                discounted_episode_rewards = np.cumsum(discounted_episode_rewards[::-1])[::-1]
-                # print('discounted + causality', discounted_episode_rewards)
-                return discounted_episode_rewards
+            q_n = []
+            for rewards in re_n:
+                episode_length = len(rewards)
+                q = np.zeros_like(rewards)
+                q[-1] = rewards[-1]
+                for i in reversed(range(episode_length - 1)):
+                    q[i] = rewards[i] + self.gamma * q[i + 1]
+                q_n.extend(q)
 
-            q_n = np.array([q for episode in re_n for q in discount_func(episode)])
         else:
-            def discount_func(episode):
-                episode_length = episode.shape[0]
-                discounted_episode_reward = np.sum(episode * discounts[:episode_length])
-                result = np.ones((episode_length,)) * discounted_episode_reward
-                return result
-            q_n = np.array([q for episode in re_n for q in discount_func(episode)])
+            q_n = []
+            for rewards in re_n:
+                ret_tar = 0
+                for i, reward in enumerate(rewards):
+                    ret_tar += self.gamma**i * reward
+                q = np.ones_like(rewards) * ret_tar
+                q_n.extend(q)
         return q_n
 
-    def compute_advantage(self, ob_no, q_n):
+    def compute_advantage(self, ob_no, q_n, re_n=None):
         """
             Computes advantages by (possibly) subtracting a baseline from the estimated Q values
 
@@ -455,7 +461,7 @@ class Agent(object):
             b_n = None # YOUR CODE HERE
             adv_n = q_n - b_n
         else:
-            adv_n = q_n.copy()
+            adv_n = q_n.copy() - np.mean([np.mean(ep) for ep in re_n]) if self.average_baseline else q_n.copy()
         return adv_n
 
     def estimate_return(self, ob_no, re_n):
@@ -478,7 +484,7 @@ class Agent(object):
                     advantages whose length is the sum of the lengths of the paths
         """
         q_n = self.sum_of_rewards(re_n)
-        adv_n = self.compute_advantage(ob_no, q_n)
+        adv_n = self.compute_advantage(ob_no, q_n, re_n)
         #====================================================================================#
         #                           ----------PROBLEM 3----------
         # Advantage Normalization
@@ -486,7 +492,7 @@ class Agent(object):
         if self.normalize_advantages:
             # On the next line, implement a trick which is known empirically to reduce variance
             # in policy gradient methods: normalize adv_n to have mean zero and std=1.
-            adv_n = (adv_n - np.mean(adv_n)) / np.std(adv_n)
+            adv_n = (adv_n - np.mean(adv_n)) / (np.std(adv_n) + 1e-8)
         return q_n, adv_n
 
     def update_parameters(self, ob_no, ac_na, q_n, adv_n):
@@ -542,7 +548,6 @@ class Agent(object):
             self.sy_ac_na: ac_na,
             self.sy_adv_n: adv_n,
         }
-        print(ob_no.shape, ac_na.shape, adv_n.shape)
         self.sess.run(self.update_op, feed_dict=input_dict)
 
 
@@ -559,6 +564,7 @@ def train_PG(
         logdir, 
         normalize_advantages,
         nn_baseline, 
+        average_baseline,
         seed,
         n_layers,
         size):
@@ -615,6 +621,7 @@ def train_PG(
         'reward_to_go': reward_to_go,
         'nn_baseline': nn_baseline,
         'normalize_advantages': normalize_advantages,
+        'average_baseline': average_baseline,
     }
 
     agent = Agent(computation_graph_args, sample_trajectory_args, estimate_return_args)
@@ -659,27 +666,7 @@ def train_PG(
         logz.dump_tabular()
         logz.pickle_tf_vars()
 
-
-def main():
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('env_name', type=str)
-    parser.add_argument('--exp_name', type=str, default='vpg')
-    parser.add_argument('--render', action='store_true')
-    parser.add_argument('--discount', type=float, default=1.0)
-    parser.add_argument('--n_iter', '-n', type=int, default=100)
-    parser.add_argument('--batch_size', '-b', type=int, default=1000)
-    parser.add_argument('--ep_len', '-ep', type=float, default=-1.)
-    parser.add_argument('--learning_rate', '-lr', type=float, default=5e-3)
-    parser.add_argument('--reward_to_go', '-rtg', action='store_true')
-    parser.add_argument('--dont_normalize_advantages', '-dna', action='store_true')
-    parser.add_argument('--nn_baseline', '-bl', action='store_true')
-    parser.add_argument('--seed', type=int, default=1)
-    parser.add_argument('--n_experiments', '-e', type=int, default=1)
-    parser.add_argument('--n_layers', '-l', type=int, default=2)
-    parser.add_argument('--size', '-s', type=int, default=64)
-    args = parser.parse_args()
-
+def main(args):
     if not(os.path.exists('data')):
         os.makedirs('data')
     logdir = args.exp_name + '_' + args.env_name + '_' + time.strftime("%d-%m-%Y_%H-%M-%S")
@@ -709,6 +696,7 @@ def main():
                 logdir=os.path.join(logdir,'%d'%seed),
                 normalize_advantages=not(args.dont_normalize_advantages),
                 nn_baseline=args.nn_baseline, 
+                average_baseline=args.average_baseline,
                 seed=seed,
                 n_layers=args.n_layers,
                 size=args.size
@@ -724,6 +712,27 @@ def main():
 
     for p in processes:
         p.join()
+def __main():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('env_name', type=str)
+    parser.add_argument('--exp_name', type=str, default='vpg')
+    parser.add_argument('--render', action='store_true')
+    parser.add_argument('--discount', type=float, default=1.0)
+    parser.add_argument('--n_iter', '-n', type=int, default=100)
+    parser.add_argument('--batch_size', '-b', type=int, default=1000)
+    parser.add_argument('--ep_len', '-ep', type=float, default=-1.)
+    parser.add_argument('--learning_rate', '-lr', type=float, default=5e-3)
+    parser.add_argument('--reward_to_go', '-rtg', action='store_true')
+    parser.add_argument('--dont_normalize_advantages', '-dna', action='store_true')
+    parser.add_argument('--nn_baseline', '-bl', action='store_true')
+    parser.add_argument('--average_baseline', action='store_true')
+    parser.add_argument('--seed', type=int, default=1)
+    parser.add_argument('--n_experiments', '-e', type=int, default=1)
+    parser.add_argument('--n_layers', '-l', type=int, default=2)
+    parser.add_argument('--size', '-s', type=int, default=64)
+    args = parser.parse_args()
+    main(args)
 
 if __name__ == "__main__":
-    main()
+    __main()
