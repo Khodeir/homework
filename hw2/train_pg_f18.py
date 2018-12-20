@@ -19,7 +19,9 @@ import math
 def get_elements(data, indices):
     indeces = tf.range(0, tf.shape(indices)[0])*data.shape[1] + indices
     return tf.gather(tf.reshape(data, [-1]), indeces)
-
+def normalize(data, mean=0.0, stddev=1.0):
+    data = np.array(data)
+    return mean + ((data -np.mean(data) ) * stddev / (np.std(data) + 1e-8))
 #========================================================================================#
 #                           ----------PROBLEM 2----------
 #========================================================================================#  
@@ -154,7 +156,7 @@ class Agent(object):
         else:
             # YOUR_CODE_HERE
             sy_mean = build_mlp(self.sy_ob_no, self.ac_dim, "mlp", self.n_layers, self.size, activation=tf.tanh, output_activation=None)
-
+            self.sy_logstd = tf.get_variable('logstd', [self.ac_dim])
             return (sy_mean, self.sy_logstd)
 
     #========================================================================================#
@@ -230,7 +232,7 @@ class Agent(object):
             sy_mean, sy_logstd = policy_parameters
             # YOUR_CODE_HERE
             sy_std = tf.math.exp(sy_logstd)
-            sy_logprob_n = -0.5 * tf.reduce_sum(tf.square((sy_ac_na - sy_mean) / sy_std), axis=1) - tf.math.log(tf.math.sqrt(2*np.pi*sy_std*sy_std))
+            sy_logprob_n = -0.5 * tf.reduce_sum(tf.square((sy_ac_na - sy_mean) / sy_std), axis=1) - tf.reduce_sum(tf.math.log(tf.math.sqrt(2*np.pi*sy_std*sy_std)))[None]
         return sy_logprob_n
 
     def build_computation_graph(self):
@@ -255,8 +257,6 @@ class Agent(object):
                 to get the policy gradient.
         """
         self.sy_ob_no, self.sy_ac_na, self.sy_adv_n = self.define_placeholders()
-        if not self.discrete:
-            self.sy_logstd = tf.Variable(np.ones(self.ac_dim), trainable=True, dtype=tf.float32)
 
         # The policy takes in an observation and produces a distribution over the action space
         self.policy_parameters = self.policy_forward_pass(self.sy_ob_no)
@@ -285,16 +285,15 @@ class Agent(object):
         # neural network baseline. These will be used to fit the neural network baseline. 
         #========================================================================================#
         if self.nn_baseline:
-            raise NotImplementedError
             self.baseline_prediction = tf.squeeze(build_mlp(
-                                    self.sy_ob_no, 
-                                    1, 
+                                    self.sy_ob_no,
+                                    1,
                                     "nn_baseline",
                                     n_layers=self.n_layers,
                                     size=self.size))
             # YOUR_CODE_HERE
-            self.sy_target_n = None
-            baseline_loss = None
+            self.sy_target_n = tf.placeholder(shape=[None], dtype=tf.float32, name="baseline_targets")
+            baseline_loss = tf.reduce_sum(tf.square(self.sy_target_n - self.baseline_prediction))
             self.baseline_update_op = tf.train.AdamOptimizer(self.learning_rate).minimize(baseline_loss)
 
     def sample_trajectories(self, itr, env):
@@ -457,8 +456,9 @@ class Agent(object):
             # Hint #bl1: rescale the output from the nn_baseline to match the statistics
             # (mean and std) of the current batch of Q-values. (Goes with Hint
             # #bl2 in Agent.update_parameters.
-            raise NotImplementedError
-            b_n = None # YOUR CODE HERE
+            b_n = self.sess.run(self.baseline_prediction, feed_dict={self.sy_ob_no: ob_no}) # YOUR CODE HERE
+            b_n = normalize(b_n, mean=np.mean(q_n), stddev=np.std(q_n))
+            print(np.mean(b_n) - np.mean(q_n), np.std(b_n) - np.std(q_n))
             adv_n = q_n - b_n
         else:
             adv_n = q_n.copy() - np.mean([np.mean(ep) for ep in re_n]) if self.average_baseline else q_n.copy()
@@ -492,7 +492,7 @@ class Agent(object):
         if self.normalize_advantages:
             # On the next line, implement a trick which is known empirically to reduce variance
             # in policy gradient methods: normalize adv_n to have mean zero and std=1.
-            adv_n = (adv_n - np.mean(adv_n)) / (np.std(adv_n) + 1e-8)
+            adv_n = normalize(adv_n)
         return q_n, adv_n
 
     def update_parameters(self, ob_no, ac_na, q_n, adv_n):
@@ -528,8 +528,8 @@ class Agent(object):
             # Agent.compute_advantage.)
 
             # YOUR_CODE_HERE
-            raise NotImplementedError
-            target_n = None 
+            target_n = normalize(q_n)
+            self.sess.run(self.baseline_update_op, feed_dict={self.sy_ob_no: ob_no, self.sy_target_n: target_n})
 
         #====================================================================================#
         #                           ----------PROBLEM 3----------
