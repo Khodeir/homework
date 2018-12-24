@@ -1,64 +1,22 @@
-from skopt import Optimizer
-from skopt.learning import GaussianProcessRegressor
-from skopt.space import Real, Integer
+
 from multiprocessing import Pool
 from plot import get_datasets
-from train_pg_f18 import train_PG
+
+from subprocess import check_output
 import time
 import os
-import mujoco_py
 import IPython
-def train_func(args):
-  # if not(os.path.exists('data')):
-  #     os.makedirs('data')
-
-  # print(args.get('ep_len', None))
-  train_PG(
-    exp_name=args.get('exp_name', None),
-    env_name=args.get('env_name', None),
-    n_iter=args.get('n_iter', None),
-    gamma=args.get('discount', None),
-    min_timesteps_per_batch=args.get('batch_size', None),
-    max_path_length=args.get('ep_len', None),
-    learning_rate=args.get('learning_rate', None),
-    reward_to_go=args.get('reward_to_go', None),
-    animate=args.get('render', None),
-    logdir=args.get('logdir', None),
-    normalize_advantages=not(args.get('dont_normalize_advantages', None)),
-    nn_baseline=args.get('nn_baseline,', None),
-    seed=args.get('seed', None),
-    n_layers=args.get('n_layers', None),
-    size=args.get('size', None)
-  )
-  results = get_datasets(args.get('logdir'))
-  return results[0]['MaxReturn'][-10:].mean()
-
-
-def get_params(batch_size=250, learning_rate=5e-3):
-  params = {}
-  params['exp_name'] = 'hc_b%d_r%.2f' % (batch_size, learning_rate)
-  params['env_name'] = 'InvertedPendulum-v2'
-
-  logdir = params.get('exp_name') + '_' + params.get('env_name') + '_' + time.strftime("%d-%m-%Y_%H-%M-%S")
-  logdir = os.path.join('exp', logdir)
-  params['logdir'] = logdir
-  # params['exp_name'] = None
-  params['render'] = False
-  params['discount'] = 0.9
-  params['n_iter'] = 100
-
-  params['batch_size'] = int(batch_size)
-
-  params['ep_len'] = 1000
-  params['learning_rate'] = float(learning_rate)
-  params['reward_to_go'] = True
-  params['dont_normalize_advantages'] = False
-  params['nn_baseline'] = False
-  params['seed'] = 1
-  params['n_layers'] = 2
-  params['size'] = 64
-  return params
-
+from glob import glob
+import numpy as np
+import pickle
+def train_func(batch_size, learning_rate):
+  exp_name = 'hc_b%d_r%.2f' % (batch_size, learning_rate)
+  command  = 'python train_pg_f18.py InvertedPendulum-v2 -ep 1000 --discount 0.9 -n 100 -e 3 -l 2 -s 64 -b %d -lr %.2f -rtg --exp_name %s' % (batch_size, learning_rate, exp_name)
+  print(command)
+  check_output(command, shell=True)
+  fpath = glob('data/%s*' % exp_name)[-1]
+  results = get_datasets(fpath)
+  return -np.mean([result['AverageReturn'][-5:].mean() for result in results])
 
 
 
@@ -66,37 +24,100 @@ def get_params(batch_size=250, learning_rate=5e-3):
 import sys
 import os
 def mute():
-  sys.stdout = open(os.devnull, 'w') 
+  sys.stdout = open(os.devnull, 'w')
 
 def f(x):
   (batch_size, learning_rate) = x
-  params = get_params(batch_size, learning_rate)
+  return train_func(batch_size, learning_rate)
+
+def skopt_main():
+  from skopt import Optimizer, dump, load, Space
+  from skopt.learning import GaussianProcessRegressor
+  from skopt.space import Real, Integer
+  fname = 'optimizer-exp-pendulum-4.pkl'
+  dims = [Integer(15, 500), Real(0.025, 0.1, prior="log-uniform")]
   try:
-    return train_func(params)
+    optimizer = load(fname)
+    optimizer.space = Space(dims)
   except:
-    return 0
+    optimizer = Optimizer(
+      dimensions=dims,
+      random_state=1
+    )
+  n_jobs = 2
+  for i in range(3): 
+    pool = Pool(n_jobs, initializer=mute)
+    x = optimizer.ask(n_points=n_jobs)  # x is a list of n_points points
+    print(x)
+    y = pool.map(f, x)
+    pool.close()
+    optimizer.tell(x, y)
+    print('Iteration %d. Best yi %.2f' % (i, min(optimizer.yi)))
 
-optimizer = Optimizer(
-  dimensions=[Integer(15, 1000), Real(0.00001, 1.0)],
-  random_state=1
-)
-n_jobs = 4
-for i in range(10): 
-  pool = Pool(n_jobs, initializer=mute)
-  x = optimizer.ask(n_points=n_jobs)  # x is a list of n_points points
-  # y = Parallel()(delayed(branin)(v) for v in x)  # evaluate points in parallel
-  y = pool.map(f, x)
+  dump(optimizer, fname)
+
+def read_results(fname):
+  with open(fname, 'rb') as open_file:
+    results = pickle.load(open_file)
+  return results
+
+def manual_main():
+  fname = 'manual-exp-pend.pkl'
+  try:
+    results = read_results(fname)
+  except:
+    results = []
+
+  params = [
+    # (10000, 0.1),
+    # (10000, 0.01),
+    # (1000, 0.01),
+    # (500, 0.01),
+    # (500, 0.001),
+    # (100, 0.001),
+    # (500, 0.02),
+    # (500, 0.04),
+    # (100, 0.02),
+    # (100, 0.04)
+    # (750, 0.02),
+    # (750, 0.04),
+    # (250, 0.02),
+    # (250, 0.04),
+    # (750, 0.025),
+    # (500, 0.025),
+    # (750, 0.03),
+    # (500, 0.03),
+    # (750, 0.01),
+    # (750, 0.015),
+    # (1200, 0.01),
+    # (1400, 0.01),
+    # (2000, 0.01),
+    # (4000, 0.01),
+    (10000, 0.02),
+    (10000, 0.04),
+  ]
+  n_jobs = 2
+  pool = Pool(n_jobs)
+  for i in range(0, len(params) - n_jobs + 1, n_jobs):
+    jobs = params[i:i+n_jobs]
+
+    y = pool.map(f, jobs)
+    for xi, yi in zip(jobs, y):
+      results.append((yi, xi))
+
+    print('Iteration %d. Best yi %s' % (i, str(min(results))))
+
   pool.close()
-  optimizer.tell(x, y)
-# print(x)
-# print(y)
-IPython.embed()
-  # p = Process(target=f, args=x)
-  # p.start()
-  # processes.append(p)
+  with open(fname, 'wb') as open_file:
+    results = pickle.dump(results, open_file)
 
-  # for p in processes:
-  #     p.join()
+def show_results():
+  results = read_results('manual-exp-pend.pkl')
+  for p in sorted(results):
+    print(p)
+  # return
+  # print(sorted(results))
 
-
-
+if __name__ == '__main__':
+  manual_main()
+  # show_results()

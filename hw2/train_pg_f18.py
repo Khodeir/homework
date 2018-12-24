@@ -44,14 +44,14 @@ def build_mlp(input_placeholder, output_size, scope, n_layers, size, activation=
         Hint: use tf.layers.dense    
     """
     # YOUR CODE HERE
-    with tf.variable_scope(scope, reuse=tf.AUTO_REUSE):
+    with tf.variable_scope(scope):
         # hiddens = [tf.layers.dense(size, activation=activation, name='hidden_%d' % layer_num) for layer_num in ]
         # output_layer = [tf.layers.dense(output_size, activation=output_activation, name='output')]
 
         output_placeholder = input_placeholder
         for layer_num in range(n_layers):
-            output_placeholder = tf.layers.dense(output_placeholder, size, activation=activation, name='hidden_%d' % layer_num)
-        return tf.layers.dense(output_placeholder, output_size, activation=output_activation, name='output')
+            output_placeholder = tf.layers.dense(output_placeholder, size, activation=activation)
+        return tf.layers.dense(output_placeholder, output_size, activation=output_activation)
 
 def pathlength(path):
     return len(path["reward"])
@@ -156,7 +156,7 @@ class Agent(object):
         else:
             # YOUR_CODE_HERE
             sy_mean = build_mlp(self.sy_ob_no, self.ac_dim, "mlp", self.n_layers, self.size, activation=tf.tanh, output_activation=None)
-            self.sy_logstd = tf.get_variable('logstd', [self.ac_dim])
+            self.sy_logstd = tf.get_variable('sy_logstd', [self.ac_dim])
             return (sy_mean, self.sy_logstd)
 
     #========================================================================================#
