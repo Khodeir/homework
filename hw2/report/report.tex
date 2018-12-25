@@ -1,0 +1,254 @@
+\documentclass[a4paper]{article}
+
+\usepackage[english]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage[colorinlistoftodos]{todonotes}
+\usepackage{float}
+\usepackage{subfigure}
+\usepackage{subfloat}
+
+\title{CS294 Deep RL Assignment 2: Policy Gradients}
+
+\author{Mohamed Khodeir}
+
+\date{\today}
+
+\begin{document}
+\maketitle
+
+
+\section*{Problem 1. State Dependent Baselines}
+\subsection*{(a)}
+% I will use the notation $\tau_{t+1}^{(s_t,a_t)}$ to refer to the remainder of a trajectory that passes through $s_t, a_t$
+% $$ \Sigma_{t=1}^{T} E_{\tau \sim P_{\theta}(\tau)}[ \nabla_\theta \log \pi_\theta (a_t|s_t) b(s_t)] $$
+
+As given in the question, we can use the chain rule to deconstuct $P_\theta(\tau)$ as: 
+$$P_\theta(\tau) = P_{\theta}(s_t, a_t) P_\theta(\tau/s_t,a_t | s_t, a_t)$$
+
+We can then use the law of iterated expectations to express the expectation over $\tau$ as:
+
+$$  E_{\tau/s_t,a_t \sim P_\theta(\tau/s_t,a_t | s_t, a_t)}[ E_{(s_t, a_t) \sim P_{\theta}(s_t, a_t)}[\nabla_\theta \log \pi_\theta (a_t|s_t) b(s_t)]] $$
+
+% The expression inside the inner expectation is constant with respect to $\tau_{t+1}^{(s_t,a_t)}$ so the whole expression just reduces to:
+
+Looking just at the inner expectation, we see:
+
+$$  E_{(s_t, a_t) \sim P_{\theta}(s_t, a_t)}[ \nabla_\theta \log \pi_\theta (a_t|s_t) b(s_t)] $$
+
+
+%  as a sum:
+
+% $$  \int_{(s_t, a_t)}  P_{\theta}(s_t, a_t)( \nabla_\theta \log \pi_\theta (a_t|s_t) b(s_t)) $$
+
+Expanding the expectation, we can rewrite that as a nested integral, the first over $s_t$ and the second over $a_t$. We can also substitute the full form of $P_{\theta}(s_t, a_t)$  as a product of the policy and the state marginal.
+
+$$  \int_{s_t} \int_{a_t}  P_{\theta}(s_t)\pi_\theta(a_t | s_t) \nabla_\theta \log \pi_\theta (a_t|s_t) b(s_t) $$
+
+Taking terms in common
+$$  \int_{s_t}  P_{\theta}(s_t) b(s_t) \int_{a_t} \pi_\theta(a_t | s_t) \nabla_\theta \log \pi_\theta (a_t|s_t) $$
+
+Using the identity  $\pi_\theta(a_t | s_t) \nabla_\theta \log \pi_\theta (a_t|s_t) = \nabla_\theta
+\pi_\theta (a_t|s_t)$, we get:
+
+$$  \int_{s_t}  P_{\theta}(s_t) b(s_t) \int_{a_t} \nabla_\theta
+\pi_\theta (a_t|s_t) $$
+
+becomes by linearity of differentiation:
+
+$$  \int_{s_t}  P_{\theta}(s_t) b(s_t) \nabla_\theta \int_{a_t} 
+\pi_\theta (a_t|s_t) $$
+
+The inner integral, being an integral over a propper probility distribution just sums to 1.
+
+$$  \int_{s_t}  P_{\theta}(s_t) b(s_t) \nabla_\theta (1)$$
+
+becomes
+
+$$  \int_{s_t}  P_{\theta}(s_t) b(s_t) (0) = 0$$
+.
+So going back to the full equation in (12):
+
+$$\sum_{t=1}^T E_{\tau \sim P_\theta}[\nabla_\theta \log \pi_\theta (a_t|s_t) b(s_t)] =$$
+$$\sum_{t=1}^T E_{\tau/s_t,a_t \sim P_\theta(\tau/s_t,a_t | s_t, a_t)}[ E_{(s_t, a_t) \sim P_{\theta}(s_t, a_t)}[\nabla_\theta \log \pi_\theta (a_t|s_t) b(s_t)]] = $$
+$$\sum_{t=1}^T E_{\tau/s_t,a_t \sim P_\theta(\tau/s_t,a_t | s_t, a_t)}[0] = $$
+$$ 0 $$
+
+\subsection*{(b)}
+
+\subsubsection*{(a)}
+
+Let's consider $P_\theta(s_{t+1:T}, a_{t:T} | s_{1:t}, a_{1:t-1})$, the probability of the "rest" of the trajerctory after ($s_1, a_1, s_2, a_2, ... a_{t-1}, s_t$).
+
+Because an MDP satisfies the Markov property, we know that given $s_t$ and $a_t$, the probability of $s_{t+1}$ is independent of previous states and actions.
+
+Therefore $P_\theta(s_{t+1:T}, a_{t:T} | s_{1:t}, a_{1:t-1})$ should exactly equal $P_\theta(s_{t+1:T}, a_{t:T} | s_t)$
+
+We can show this using Bayes rule and by substituting the full form of $P_\theta(\tau)$, where $\tau$ is the whole trajectory ($s_1, a_1, s_2, a_2, ... a_{T-1}, s_T$). See Appendix.
+
+
+% $$\frac{P(s_1)\prod_{i = 2}^{i = T}P_\theta(s_i|a_{i-1}, s_{i-1})P_\theta(a_{i-1}|s_{i-1})}{P(s_1)\prod_{i = 2}^{i = t}P_\theta(s_i|a_{i-1}, s_{i-1})P_\theta(a_{i-1}|s_{i-1})}$$
+\subsubsection*{(b)}
+I will start by rewriting the expression for the probability of the "rest" of the trajectory using bayes rule:
+$$P_\theta(s_{t+1:T}, a_{t:T}|s_{1:t}, a_{1:t-1}) = P_\theta(s_{t+1:T}, a_{t+1:T}|s_{1:t}, a_{1:t})P_\theta(a_t | s_{1:t}, a_{1:t})$$
+
+This allows us to write:
+$$P_\theta(\tau) = P_\theta(s_{1:t}, a_{1:t-1}) P_\theta(a_t | s_{1:t}, a_{1:t}) P_\theta(s_{t+1:T}, a_{t+1:T}|s_{1:t}, a_{1:t})$$
+
+Note that, in our case $P_\theta(a_t | s_{1:t}, a_{1:t}) = \pi_\theta(a_t|s_t)$.
+
+% $$E_{\tau \sim P_\theta(\tau)} \bigg[ f \bigg] = E_{(s_{1:t}, a_{1:t-1}) \sim P_\theta(s_{1:t}, a_{1:t-1})} \bigg[ E_{a_t \sim P_\theta(a_t | s_{1:t}, a_{1:t})} \big[E_{s_{t+1:T}, a_{t+1:T} \sim P_\theta(s_{t+1:T}, a_{t+1:T}|s_{1:t}, a_{1:t})} \big[f\big]\big] \bigg]$$
+$$E_{\tau \sim P_\theta} \bigg[  \nabla_\theta \log \pi_\theta (a_t|s_t) b(s_t) \bigg] =$$
+$$E_{(s_{1:t}, a_{1:t-1}) \sim P_\theta} \bigg[ E_{a_t \sim P_\theta} \big[E_{s_{t+1:T}, a_{t+1:T} \sim P_\theta} \big[ \nabla_\theta \log \pi_\theta (a_t|s_t) b(s_t) \big]\big] \bigg]$$
+
+$$\int_{(s_{1:t}, a_{1:t-1})}P_\theta(s_{1:t}, a_{1:t-1}) \bigg[ \int_{a_t} \pi_\theta(a_t|s_t) \big[\int_{s_{t+1:T}, a_{t+1:T}} P_\theta(s_{t+1:T}, a_{t+1:T}|s_{1:t}, a_{1:t})  \nabla_\theta \log \pi_\theta (a_t|s_t) b(s_t) \big] \bigg]$$
+
+$$\int_{(s_{1:t}, a_{1:t-1})}P_\theta(s_{1:t}, a_{1:t-1}) \bigg[ \int_{a_t} \pi_\theta(a_t|s_t) \nabla_\theta \log \pi_\theta (a_t|s_t) b(s_t) \big[\int_{s_{t+1:T}, a_{t+1:T}} P_\theta(s_{t+1:T}, a_{t+1:T}|s_{1:t}, a_{1:t}) \big] \bigg]$$
+
+$$\int_{(s_{1:t}, a_{1:t-1})}P_\theta(s_{1:t}, a_{1:t-1}) \bigg[ \int_{a_t} \pi_\theta(a_t|s_t) \nabla_\theta \log \pi_\theta (a_t|s_t) b(s_t) \big[Const\big] \bigg]$$
+
+Making use of that useful identity again, and moving constants out of the inner integral:
+
+$$\int_{(s_{1:t}, a_{1:t-1})}P_\theta(s_{1:t}, a_{1:t-1}) b(s_t) \big[Const\big] \bigg[ \nabla_\theta \int_{a_t} \pi_\theta (a_t|s_t) \bigg]$$
+
+$$\int_{(s_{1:t}, a_{1:t-1})}P_\theta(s_{1:t}, a_{1:t-1}) b(s_t) \big[Const\big] \bigg[ \nabla_\theta Const \bigg]$$
+$$\int_{(s_{1:t}, a_{1:t-1})}P_\theta(s_{1:t}, a_{1:t-1}) b(s_t) \big[Const\big] \bigg[0 \bigg] = 0$$
+
+As we've shown that $$E_{\tau \sim P_\theta} \bigg[  \nabla_\theta \log \pi_\theta (a_t|s_t) b(s_t) \bigg] = 0$$ it follows that $$\sum_{t = 1}^T E_{\tau \sim P_\theta} \bigg[  \nabla_\theta \log \pi_\theta (a_t|s_t) b(s_t) \bigg] =0 $$
+
+
+
+% Rewriting the numerator:
+% $$\frac{P(s_1)(\prod_{i = 2}^{i = t}P_\theta(s_i|a_{i-1}, s_{i-1})P_\theta(a_{i-1}|s_{i-1})(\prod_{i = t+1}^{i = T}P_\theta(s_i|a_{i-1}, s_{i-1})P_\theta(a_{i-1}|s_{i-1})}
+% {P(s_1)\prod_{i = 2}^{i = t)}P_\theta(s_i|a_{i-1}, s_{i-1})P_\theta(a_{i-1}|s_{i-1})}$$
+
+% $$\prod_{i = t+1}^{i = T}P_\theta(s_i|a_{i-1}, s_{i-1})P_\theta(a_{i-1}|s_{i-1}) = P_\theta(s_{t+1}|a_{t}, s_{t})P_\theta(a_{t}|s_{t})\prod_{i = t+2}^{i = T}P_\theta(s_i|a_{i-1}, s_{i-1})P_\theta(a_{i-1}|s_{i-1})$$
+
+
+\section*{Problem 4. CartPole}
+\subsection*{Learning Curves for Small/Large Batch Sizes}
+\begin{figure}[H]
+\centering
+\includegraphics[width=1\textwidth]{sb_cartpole.png}
+\caption{Small Batch}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=1\textwidth]{lb_cartpole.png}
+\caption{Large Batch}
+\end{figure}
+
+\subsection*{Analysis questions}
+\subsubsection*{Trajectory-Centric vs Reward-To-Go w/out Advantage Centering}
+We can see that the reward to go estimator displays higher performance, though the effect seems to be significantly less pronounced with larger batch sizes.
+\subsubsection*{Advantage Centering}
+Advantage centering certainly seems to have helped by reducing the variance of the estimator, which we can see in the more stable learning curve for both small and larger batch sizes. 
+\subsubsection*{Batch Size}
+The batch size also seems to be very effective at reducing the variance of the gradient estimators both in the reward-to-go estimator as well as the trajectory-centric one. It also converges more quickly in the number of iterations in all cases. 
+
+\section*{Problem 5. Inverted Pendulum}
+\subsection*{Learning Curve for Smallest Batch Size and Largest Learning Rate}
+\begin{figure}[H]
+\centering
+\includegraphics[width=1\textwidth]{problem-5.png}
+\caption{The learning rate used is 0.01, and the batch size is 1000.}
+\end{figure}
+
+\section*{Problem 7. Lunar Landing}
+\begin{figure}[H]
+\centering
+\includegraphics[width=1\textwidth]{lunar_landing.png}
+\caption{S}
+\end{figure} 
+
+
+\section*{Problem 8. HalfCheetah}
+\subsection*{batch size and learning rate}
+\begin{figure}[H]
+\centering
+\includegraphics[width=1\textwidth]{half_cheetah_bsize_lr.png}
+\caption{S}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=1\textwidth]{halfcheetah_rtg_baseline.png}
+\caption{S}
+\end{figure}
+% \begin{table}[H]
+% \centering
+% \begin{tabular}{l|l|l|r}
+% & Game & Mean & Std \\\hline
+% Expert & HalfCheetah & 2374.79 & 772.96\\
+% BC Agent & HalfCheetah & 2110.61 & 947.18\\
+% Expert & Humanoid & 2908.21 & 929.65\\
+% BC Agent & Humanoid & 45.01 & 13.77
+% \end{tabular}
+% \caption{Stats reported over 100 rollouts. The HalfCheetah BC agent used a network of 128 and 64 units respectively followed by an output layer over 6 dimensions of the action space. The Humanoid agent 256 and 128 units respectively followed by an output layer over 17 dimensions of the action space.}
+% \end{table}
+
+
+% \subsection*{2.3 Experimentation}
+
+% \begin{figure}[H]
+% \centering
+% \includegraphics[width=1\textwidth]{{../2.3-propdata-halfcheetah}.png}
+% \caption{\label{fig:propdata}I chose to look at the effect of more training data on the BC Agent's performance. I trained the HalfCheetah agent using subsets of the data between 10\% and 100\%.}
+% \end{figure}
+
+
+% \subsection*{3.2 DAgger}
+% \begin{figure}[H]
+% \centering
+% \includegraphics[width=1\textwidth]{{../3.2 - Dagger Comparison}.png}
+% \caption{\label{fig:dagger}I chose the task on which the behavior cloning agent performed poorest relative to the expert policy - Humanoid. I used the same architecture as in the behavior cloning experiments (i.e. 256 relu > 128 relu -> 17 lin). I ran 20 episodes of the algorithm, training the policy for 80000 steps from scratch each episode, and generating 10 rollouts worth of samples for the next iteration. }
+% \end{figure}
+\section*{Appendix}
+\subsection*{Problem 1 (b)}
+
+$$P_\theta(s_{t+1:T}, a_{t:T} | s_{1:t}, a_{1:t-1}) = \frac{P_\theta(\tau)}{P(s_{1:t}, a_{1:t-1})}$$
+
+Recall that the numerator, $P_\theta(\tau)$ is:
+
+$$P_\theta(\tau) = P(s_1)\prod_{i = 2}^{i = T}P_\theta(s_i|a_{i-1}, s_{i-1})P_\theta(a_{i-1}|s_{i-1})$$
+
+We can equivalently represent that as:
+
+$$P_\theta(\tau) = \Bigg( P(s_1)\prod_{i = 2}^{i = t}P_\theta(s_i|a_{i-1}, s_{i-1})P_\theta(a_{i-1}|s_{i-1}) \Bigg) \prod_{i = t+1}^{i = T}P_\theta(s_i|a_{i-1}, s_{i-1})P_\theta(a_{i-1}|s_{i-1})$$
+
+The denomenator $P(s_{1:t}, a_{1:t-1})$ simply marginalizes $P_\theta$ over all possible assignments of the remaining states and actions. i.e.
+
+$$P(s_{1:t}, a_{1:t-1}) = \sum_{a_{t:T}}\sum_{s_{t+1:T}} P_\theta(\tau) = \sum_{a_{t:T}}\sum_{s_{t+1:T}} P(s_1)\prod_{i = 2}^{i = T}P_\theta(s_i|a_{i-1}, s_{i-1})P_\theta(a_{i-1}|s_{i-1}) = $$
+
+Factoring out the terms that dont depend on the summation domains:
+
+$$ \Bigg(P(s_1)\prod_{i = 2}^{i = t}P_\theta(s_i|a_{i-1}, s_{i-1})P_\theta(a_{i-1}|s_{i-1}) \Bigg) \sum_{a_{t:T}}\sum_{s_{t+1:T}} \prod_{i = t+1}^{i = T}P_\theta(s_i|a_{i-1}, s_{i-1})P_\theta(a_{i-1}|s_{i-1})$$
+
+
+Now, substituting this for our numerator and denomenator we get:
+
+$$P_\theta(s_{t+1:T}, a_{t:T} | s_{1:t}, a_{1:t-1}) = \frac{ \prod_{i = t+1}^{i = T}P_\theta(s_i|a_{i-1}, s_{i-1})P_\theta(a_{i-1}|s_{i-1})}{ \sum_{a_t}^T\sum_{s_{t+1:T}} \prod_{i = t+1}^{i = T}P_\theta(s_i|a_{i-1}, s_{i-1})P_\theta(a_{i-1}|s_{i-1})}$$
+
+We can follow a similar procedure starting from $P_\theta(s_{t+1:T}, a_{t:T} | s_t)$ to show that they reduce to the same expression. 
+
+
+ $$P_\theta(s_{t+1:T}, a_{t:T} | s_t) = \frac{\sum_{a_1:t-1}\sum_{s_1:t-1} P_\theta(\tau)}{\sum_{a_1:t-1}\sum_{s_1:t} \sum_{a_t:T-1}\sum_{s_t+1:T} P_\theta(\tau)}$$
+ 
+ 
+ Substituting our factored form for $P_\theta$, looking  only at numerator:
+ 
+  $$\sum_{a_1:t-1}\sum_{s_1:t-1} \Bigg( P(s_1)\prod_{i = 2}^{i = t}P_\theta(s_i|a_{i-1}, s_{i-1})P_\theta(a_{i-1}|s_{i-1}) \Bigg) \prod_{i = t+1}^{i = T}P_\theta(s_i|a_{i-1}, s_{i-1})P_\theta(a_{i-1}|s_{i-1}) = $$
+  
+  $$\prod_{i = t+1}^{i = T}P_\theta(s_i|a_{i-1}, s_{i-1})P_\theta(a_{i-1}|s_{i-1}) \sum_{a_1:t-1}\sum_{s_1:t-1} \Bigg( P(s_1)\prod_{i = 2}^{i = t}P_\theta(s_i|a_{i-1}, s_{i-1})P_\theta(a_{i-1}|s_{i-1}) \Bigg)$$
+ Now denomenator: 
+ 
+ $$\sum_{a_1:t-1}\sum_{s_1:t-1} \sum_{a_t:T-1}\sum_{s_t+1:T} \Bigg( P(s_1)\prod_{i = 2}^{i = t}P_\theta(s_i|a_{i-1}, s_{i-1})P_\theta(a_{i-1}|s_{i-1}) \Bigg) \prod_{i = t+1}^{i = T}P_\theta(s_i|a_{i-1}, s_{i-1})P_\theta(a_{i-1}|s_{i-1}) = $$
+ 
+  $$\sum_{a_{1:t-1}}\sum_{s_{1:t-1}} \Bigg( P(s_1)\prod_{i = 2}^{i = t}P_\theta(s_i|a_{i-1}, s_{i-1})P_\theta(a_{i-1}|s_{i-1}) \Bigg) \sum_{a_t:T-1}\sum_{s_t+1:T}  \prod_{i = t+1}^{i = T}P_\theta(s_i|a_{i-1}, s_{i-1})P_\theta(a_{i-1}|s_{i-1}) = $$
+  
+  Putting it all together:
+  $$P_\theta(s_{t+1:T}, a_{t:T} | s_t) = \frac{ \prod_{i = t+1}^{i = T}P_\theta(s_i|a_{i-1}, s_{i-1})P_\theta(a_{i-1}|s_{i-1})}{ \sum_{a_t}^T\sum_{s_{t+1:T}} \prod_{i = t+1}^{i = T}P_\theta(s_i|a_{i-1}, s_{i-1})P_\theta(a_{i-1}|s_{i-1})}$$
+  
+\end{document}
