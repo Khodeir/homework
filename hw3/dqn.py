@@ -260,7 +260,7 @@ class QLearner(object):
 
     #####
     def predict():
-      if self.model_initialized:
+      if self.model_initialized and np.random.random() < 0.99:
         obs = self.replay_buffer.encode_recent_observation()
         action = self.session.run(self.sampled_action, feed_dict={
           self.obs_t_ph: obs
@@ -320,8 +320,32 @@ class QLearner(object):
       # you should update every target_update_freq steps, and you may find the
       # variable self.num_param_updates useful for this (it was initialized to 0)
       #####
+      if not self.model_initialized:
+        initialize_interdependent_variables(self.session, tf.global_variables(), {
+             self.obs_t_ph: obs_t_batch,
+             self.obs_tp1_ph: obs_tp1_batch,
+         })
+        self.model_initialized = True
 
       # YOUR CODE HERE
+      (obs_batch,
+      act_batch,
+      rew_batch,
+      next_obs_batch,
+      done_mask) = self.replay_buffer.sample(self.batch_size)
+
+
+      self.session.run(self.train_fn, feed_dict={
+        self.obs_t_ph: obs_batch,
+        self.act_t_ph: act_batch,
+        self.rew_t_ph: rew_batch,
+        self.obs_tp1_ph: next_obs_batch,
+        self.done_mask_ph: done_mask,
+        self.learning_rate: self.optimizer_spec.lr_schedule.value(self.t)
+      })
+
+      if (self.num_param_updates % self.target_update_freq == 0):
+        self.session.run(self.update_target_fn)
 
       self.num_param_updates += 1
 
