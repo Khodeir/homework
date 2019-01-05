@@ -13,6 +13,8 @@ from dqn_utils import *
 
 OptimizerSpec = namedtuple("OptimizerSpec", ["constructor", "kwargs", "lr_schedule"])
 
+INIT_CHECKPOINT_DIR = './'
+
 class QLearner(object):
 
   def __init__(
@@ -159,7 +161,31 @@ class QLearner(object):
     ######
 
     # YOUR CODE HERE
+    with tf.variable_scope("q_func"):
+      q_t = nets.inception.inception_v1(obs_t_float, num_classes=1)
+    with tf.variable_scope("target_q_func"):
+      q_tp1 = nets.inception.inception_v1(obs_tp1_float, num_classes=1)
 
+    targets = tf.where(
+      self.done_mask_ph,
+      self.rew_t_ph,
+      self.rew_t_ph + q_tp1
+    )
+    q_init_fn = slim.assign_from_checkpoint_fn(
+        os.path.join(INIT_CHECKPOINT_DIR, 'inception_v1.ckpt'),
+        slim.get_model_variables('q_func/InceptionV1')
+    )
+    target_q_init_fn = slim.assign_from_checkpoint_fn(
+        os.path.join(INIT_CHECKPOINT_DIR, 'inception_v1.ckpt'),
+        slim.get_model_variables('target_q_func/InceptionV1')
+    )
+    self.init_fn = tf.group([
+      q_init_fn,
+      target_q_init_fn
+    ])
+    self.total_error = huber_loss(targets - q_t)
+    q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='q_func')
+    target_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='target_q_func')
     ######
 
     # construct optimization op (with gradient clipping)
