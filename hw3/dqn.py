@@ -10,6 +10,7 @@ import tensorflow                as tf
 import tensorflow.contrib.layers as layers
 from collections import namedtuple
 from dqn_utils import *
+import tensorflow.contrib.slim.nets as nets
 
 OptimizerSpec = namedtuple("OptimizerSpec", ["constructor", "kwargs", "lr_schedule"])
 
