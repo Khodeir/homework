@@ -162,15 +162,21 @@ class QLearner(object):
 
     # YOUR CODE HERE
     with tf.variable_scope("q_func"):
-      q_t = nets.inception.inception_v1(obs_t_float, num_classes=1)
+      q_t_all_actions = nets.inception.inception_v1(tf.image.resize_image_with_pad(obs_t_float, 224, 224), num_classes=self.num_actions)
     with tf.variable_scope("target_q_func"):
-      q_tp1 = nets.inception.inception_v1(obs_tp1_float, num_classes=1)
+      q_tp1_all_actions = nets.inception.inception_v1(tf.image.resize_image_with_pad(obs_tp1_float, 224, 224), num_classes=self.num_actions)
+
+    q_t = q_t_all_actions[:, self.act_t_ph]
+    q_tp1 = tf.reduce_max(q_tp1_all_actions, axis=1)
+
+    self.sampled_action = tf.argmax(q_t_all_actions, axis=1)
 
     targets = tf.where(
       self.done_mask_ph,
       self.rew_t_ph,
       self.rew_t_ph + q_tp1
     )
+
     q_init_fn = slim.assign_from_checkpoint_fn(
         os.path.join(INIT_CHECKPOINT_DIR, 'inception_v1.ckpt'),
         slim.get_model_variables('q_func/InceptionV1')
@@ -253,6 +259,22 @@ class QLearner(object):
     # might as well be random, since you haven't trained your net...)
 
     #####
+    def predict():
+      if self.model_initialized:
+        obs = self.replay_buffer.encode_recent_observation()
+        action = self.session.run(self.sampled_action, feed_dict={
+          self.obs_t_ph: obs
+        })
+        return action
+
+      return self.env.action_space.sample()
+
+    action = predict()
+    obs, reward, done, info = env.step(action)
+    idx = self.replay_buffer.store_frame(obs)
+    self.replay_buffer.store_effect(idx, action, reward, done)
+    self.last_obs = obs
+
 
     # YOUR CODE HERE
 
