@@ -10,9 +10,6 @@ import tensorflow                as tf
 import tensorflow.contrib.layers as layers
 from collections import namedtuple
 from dqn_utils import *
-import tensorflow.contrib.slim.nets as nets
-import tensorflow.contrib.slim as slim
-import os
 
 OptimizerSpec = namedtuple("OptimizerSpec", ["constructor", "kwargs", "lr_schedule"])
 
@@ -164,10 +161,8 @@ class QLearner(object):
     ######
 
     # YOUR CODE HERE
-    with tf.variable_scope("q_func"):
-      q_t_all_actions, _ = nets.inception.inception_v1(tf.image.resize_image_with_pad(obs_t_float, 224, 224), num_classes=self.num_actions)
-    with tf.variable_scope("target_q_func"):
-      q_tp1_all_actions, _ = nets.inception.inception_v1(tf.image.resize_image_with_pad(obs_tp1_float, 224, 224), num_classes=self.num_actions)
+    q_t_all_actions = q_func(obs_t_float, self.num_actions, scope="q_func", reuse=False)
+    q_tp1_all_actions = q_func(obs_tp1_float, self.num_actions, scope="target_q_func", reuse=False)
 
     row_indices = tf.range(tf.shape(self.act_t_ph)[0])
     full_indices = tf.stack([row_indices, self.act_t_ph], axis=1)
@@ -180,15 +175,6 @@ class QLearner(object):
       self.done_mask_ph > 0,
       self.rew_t_ph,
       self.rew_t_ph + q_tp1
-    )
-
-    self.q_init_fn = slim.assign_from_checkpoint_fn(
-        os.path.join(INIT_CHECKPOINT_DIR, 'inception_v1.ckpt'),
-        slim.get_model_variables('q_func/InceptionV1')
-    )
-    self.target_q_init_fn = slim.assign_from_checkpoint_fn(
-        os.path.join(INIT_CHECKPOINT_DIR, 'inception_v1.ckpt'),
-        slim.get_model_variables('target_q_func/InceptionV1')
     )
     #self.init_fn = tf.group([
     #  q_init_fn,
@@ -265,7 +251,7 @@ class QLearner(object):
 
     #####
     def predict():
-      if self.model_initialized and np.random.random() < 0.99:
+      if self.model_initialized and np.random.random() > self.exploration.value(self.t):
         obs = self.replay_buffer.encode_recent_observation()
         action = self.session.run(self.sampled_action, feed_dict={
           self.obs_t_ph: [obs]
@@ -274,10 +260,13 @@ class QLearner(object):
 
       return self.env.action_space.sample()
 
+    idx = self.replay_buffer.store_frame(self.last_obs)
+
     action = predict()
     obs, reward, done, info = self.env.step(action)
-    idx = self.replay_buffer.store_frame(obs)
+
     self.replay_buffer.store_effect(idx, action, reward, done)
+
     self.last_obs = obs
     if done:
       self.last_obs = self.env.reset()
@@ -351,7 +340,7 @@ class QLearner(object):
         self.learning_rate: self.optimizer_spec.lr_schedule.value(self.t)
       })
 
-      if (self.num_param_updates % self.target_update_freq == 0):
+      if self.num_param_updates % self.target_update_freq == 0:
         self.session.run(self.update_target_fn)
 
       self.num_param_updates += 1
