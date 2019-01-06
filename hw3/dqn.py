@@ -11,6 +11,8 @@ import tensorflow.contrib.layers as layers
 from collections import namedtuple
 from dqn_utils import *
 import tensorflow.contrib.slim.nets as nets
+import tensorflow.contrib.slim as slim
+import os
 
 OptimizerSpec = namedtuple("OptimizerSpec", ["constructor", "kwargs", "lr_schedule"])
 
@@ -163,33 +165,35 @@ class QLearner(object):
 
     # YOUR CODE HERE
     with tf.variable_scope("q_func"):
-      q_t_all_actions = nets.inception.inception_v1(tf.image.resize_image_with_pad(obs_t_float, 224, 224), num_classes=self.num_actions)
+      q_t_all_actions, _ = nets.inception.inception_v1(tf.image.resize_image_with_pad(obs_t_float, 224, 224), num_classes=self.num_actions)
     with tf.variable_scope("target_q_func"):
-      q_tp1_all_actions = nets.inception.inception_v1(tf.image.resize_image_with_pad(obs_tp1_float, 224, 224), num_classes=self.num_actions)
+      q_tp1_all_actions, _ = nets.inception.inception_v1(tf.image.resize_image_with_pad(obs_tp1_float, 224, 224), num_classes=self.num_actions)
 
-    q_t = q_t_all_actions[:, self.act_t_ph]
+    row_indices = tf.range(tf.shape(self.act_t_ph)[0])
+    full_indices = tf.stack([row_indices, self.act_t_ph], axis=1)
+    q_t = tf.gather_nd(q_t_all_actions, full_indices)
     q_tp1 = tf.reduce_max(q_tp1_all_actions, axis=1)
 
     self.sampled_action = tf.argmax(q_t_all_actions, axis=1)
 
     targets = tf.where(
-      self.done_mask_ph,
+      self.done_mask_ph > 0,
       self.rew_t_ph,
       self.rew_t_ph + q_tp1
     )
 
-    q_init_fn = slim.assign_from_checkpoint_fn(
+    self.q_init_fn = slim.assign_from_checkpoint_fn(
         os.path.join(INIT_CHECKPOINT_DIR, 'inception_v1.ckpt'),
         slim.get_model_variables('q_func/InceptionV1')
     )
-    target_q_init_fn = slim.assign_from_checkpoint_fn(
+    self.target_q_init_fn = slim.assign_from_checkpoint_fn(
         os.path.join(INIT_CHECKPOINT_DIR, 'inception_v1.ckpt'),
         slim.get_model_variables('target_q_func/InceptionV1')
     )
-    self.init_fn = tf.group([
-      q_init_fn,
-      target_q_init_fn
-    ])
+    #self.init_fn = tf.group([
+    #  q_init_fn,
+    #  target_q_init_fn
+    #])
     self.total_error = huber_loss(targets - q_t)
     q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='q_func')
     target_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='target_q_func')
@@ -271,7 +275,7 @@ class QLearner(object):
       return self.env.action_space.sample()
 
     action = predict()
-    obs, reward, done, info = env.step(action)
+    obs, reward, done, info = self.env.step(action)
     idx = self.replay_buffer.store_frame(obs)
     self.replay_buffer.store_effect(idx, action, reward, done)
     self.last_obs = obs
