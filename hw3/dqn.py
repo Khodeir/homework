@@ -279,6 +279,8 @@ class QLearner(object):
     idx = self.replay_buffer.store_frame(obs)
     self.replay_buffer.store_effect(idx, action, reward, done)
     self.last_obs = obs
+    if done:
+      self.last_obs = self.env.reset()
 
 
     # YOUR CODE HERE
