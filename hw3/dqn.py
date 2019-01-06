@@ -268,9 +268,9 @@ class QLearner(object):
       if self.model_initialized and np.random.random() < 0.99:
         obs = self.replay_buffer.encode_recent_observation()
         action = self.session.run(self.sampled_action, feed_dict={
-          self.obs_t_ph: obs
+          self.obs_t_ph: [obs]
         })
-        return action
+        return action[0]
 
       return self.env.action_space.sample()
 
@@ -327,12 +327,6 @@ class QLearner(object):
       # you should update every target_update_freq steps, and you may find the
       # variable self.num_param_updates useful for this (it was initialized to 0)
       #####
-      if not self.model_initialized:
-        initialize_interdependent_variables(self.session, tf.global_variables(), {
-             self.obs_t_ph: obs_t_batch,
-             self.obs_tp1_ph: obs_tp1_batch,
-         })
-        self.model_initialized = True
 
       # YOUR CODE HERE
       (obs_batch,
@@ -341,6 +335,12 @@ class QLearner(object):
       next_obs_batch,
       done_mask) = self.replay_buffer.sample(self.batch_size)
 
+      if not self.model_initialized:
+        initialize_interdependent_variables(self.session, tf.global_variables(), {
+             self.obs_t_ph: obs_batch,
+             self.obs_tp1_ph: next_obs_batch,
+         })
+        self.model_initialized = True
 
       self.session.run(self.train_fn, feed_dict={
         self.obs_t_ph: obs_batch,
