@@ -15,6 +15,11 @@ OptimizerSpec = namedtuple("OptimizerSpec", ["constructor", "kwargs", "lr_schedu
 
 INIT_CHECKPOINT_DIR = './'
 
+def select_columns(params, col_indices):
+  row_indices = tf.range(tf.shape(col_indices)[0])
+  full_indices = tf.stack([row_indices, col_indices], axis=1)
+  return tf.gather_nd(params, full_indices)
+
 class QLearner(object):
 
   def __init__(
@@ -164,10 +169,13 @@ class QLearner(object):
     q_t_all_actions = q_func(obs_t_float, self.num_actions, scope="q_func", reuse=False)
     q_tp1_all_actions = q_func(obs_tp1_float, self.num_actions, scope="target_q_func", reuse=False)
 
-    row_indices = tf.range(tf.shape(self.act_t_ph)[0])
-    full_indices = tf.stack([row_indices, self.act_t_ph], axis=1)
-    q_t = tf.gather_nd(q_t_all_actions, full_indices)
-    q_tp1 = tf.reduce_max(q_tp1_all_actions, axis=1)
+    q_t = select_columns(q_t_all_actions, self.act_t_ph)
+    if not double_q:
+      q_tp1 = tf.reduce_max(q_tp1_all_actions, axis=1)
+    else:
+      q_online_tp1_all_actions = q_func(obs_tp1_float, self.num_actions, scope="q_func", reuse=True)
+      idxs = tf.argmax(q_online_tp1_all_actions, axis=1)
+      q_tp1 = select_columns(q_tp1_all_actions, idxs)
 
     self.sampled_action = tf.argmax(q_t_all_actions, axis=1)
 
