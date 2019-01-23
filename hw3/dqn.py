@@ -1,3 +1,4 @@
+import IPython
 import uuid
 import time
 import pickle
@@ -17,6 +18,7 @@ INIT_CHECKPOINT_DIR = './'
 
 def select_columns(params, col_indices):
   row_indices = tf.range(tf.shape(col_indices)[0])
+  row_indices = tf.cast(row_indices, col_indices.dtype)
   full_indices = tf.stack([row_indices, col_indices], axis=1)
   return tf.gather_nd(params, full_indices)
 
@@ -384,10 +386,16 @@ class QLearner(object):
 def learn(*args, **kwargs):
   alg = QLearner(*args, **kwargs)
   while not alg.stopping_criterion_met():
-    alg.step_env()
+    try:
+      alg.step_env()
     # at this point, the environment should have been advanced one step (and
     # reset if done was true), and self.last_obs should point to the new latest
     # observation
-    alg.update_model()
-    alg.log_progress()
-
+      alg.update_model()
+      alg.log_progress()
+    except Exception as e:
+      print('hey', e)
+      break
+    except KeyboardInterrupt as e:
+      break
+  IPython.embed()
