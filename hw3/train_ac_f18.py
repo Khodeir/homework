@@ -73,8 +73,11 @@ class Agent(object):
         self.ac_dim = computation_graph_args['ac_dim']
         self.discrete = computation_graph_args['discrete']
         self.size = computation_graph_args['size']
+        self.size_critic = computation_graph_args['size_critic']
         self.n_layers = computation_graph_args['n_layers']
+        self.n_layers_critic = computation_graph_args['n_layers_critic']
         self.learning_rate = computation_graph_args['learning_rate']
+        self.learning_rate_critic = computation_graph_args['learning_rate_critic']
         self.num_target_updates = computation_graph_args['num_target_updates']
         self.num_grad_steps_per_target_update = computation_graph_args['num_grad_steps_per_target_update']
 
@@ -253,11 +256,11 @@ class Agent(object):
                                 self.sy_ob_no,
                                 1,
                                 "nn_critic",
-                                n_layers=self.n_layers,
-                                size=self.size))
+                                n_layers=self.n_layers_critic,
+                                size=self.size_critic))
         self.sy_target_n = tf.placeholder(shape=[None], name="critic_target", dtype=tf.float32)
         self.critic_loss = tf.losses.mean_squared_error(self.sy_target_n, self.critic_prediction)
-        self.critic_update_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.critic_loss)
+        self.critic_update_op = tf.train.AdamOptimizer(self.learning_rate_critic).minimize(self.critic_loss)
 
     def sample_trajectories(self, itr, env):
         # Collect paths until we have enough timesteps
@@ -399,6 +402,7 @@ def train_AC(
         min_timesteps_per_batch, 
         max_path_length,
         learning_rate,
+        learning_rate_critic,
         num_target_updates,
         num_grad_steps_per_target_update,
         animate, 
@@ -406,7 +410,9 @@ def train_AC(
         normalize_advantages,
         seed,
         n_layers,
-        size):
+        n_layers_critic,
+        size,
+        size_critic):
 
     start = time.time()
 
@@ -442,11 +448,14 @@ def train_AC(
     #========================================================================================#
     computation_graph_args = {
         'n_layers': n_layers,
+        'n_layers_critic': n_layers_critic,
         'ob_dim': ob_dim,
         'ac_dim': ac_dim,
         'discrete': discrete,
         'size': size,
+        'size_critic': size_critic,
         'learning_rate': learning_rate,
+        'learning_rate_critic': learning_rate_critic,
         'num_target_updates': num_target_updates,
         'num_grad_steps_per_target_update': num_grad_steps_per_target_update,
         }
@@ -524,13 +533,16 @@ def main():
     parser.add_argument('--batch_size', '-b', type=int, default=1000)
     parser.add_argument('--ep_len', '-ep', type=float, default=-1.)
     parser.add_argument('--learning_rate', '-lr', type=float, default=5e-3)
+    parser.add_argument('--learning_rate_critic', '-lrc', type=float, default=5e-3)
     parser.add_argument('--dont_normalize_advantages', '-dna', action='store_true')
     parser.add_argument('--num_target_updates', '-ntu', type=int, default=10)
     parser.add_argument('--num_grad_steps_per_target_update', '-ngsptu', type=int, default=10)
     parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--n_experiments', '-e', type=int, default=1)
     parser.add_argument('--n_layers', '-l', type=int, default=2)
+    parser.add_argument('--n_layers_critic', '-lc', type=int, default=4)
     parser.add_argument('--size', '-s', type=int, default=64)
+    parser.add_argument('--size_critic', '-sc', type=int, default=64)
     args = parser.parse_args()
 
     data_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data')
@@ -559,6 +571,7 @@ def main():
                 min_timesteps_per_batch=args.batch_size,
                 max_path_length=max_path_length,
                 learning_rate=args.learning_rate,
+                learning_rate_critic=args.learning_rate_critic,
                 num_target_updates=args.num_target_updates,
                 num_grad_steps_per_target_update=args.num_grad_steps_per_target_update,
                 animate=args.render,
@@ -566,7 +579,9 @@ def main():
                 normalize_advantages=not(args.dont_normalize_advantages),
                 seed=seed,
                 n_layers=args.n_layers,
-                size=args.size
+                n_layers_critic=args.n_layers_critic,
+                size=args.size,
+                size_critic=args.size
                 )
         # # Awkward hacky process runs, because Tensorflow does not like
         # # repeatedly calling train_AC in the same thread.
