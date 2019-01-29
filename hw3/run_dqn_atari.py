@@ -30,7 +30,7 @@ def atari_model(img_in, num_actions, scope, reuse=False):
 
 def atari_learn(env,
                 session,
-                num_timesteps):
+                num_timesteps, **kwargs):
     # This is just a rough estimate
     num_iterations = float(num_timesteps) / 4.0
 
@@ -59,14 +59,7 @@ def atari_learn(env,
             (num_iterations / 2, 0.01),
         ], outside_value=0.01
     )
-
-    dqn.learn(
-        env=env,
-        q_func=atari_model,
-        optimizer_spec=optimizer,
-        session=session,
-        exploration=exploration_schedule,
-        stopping_criterion=stopping_criterion,
+    dqn_params = dict(
         replay_buffer_size=1000000,
         batch_size=32,
         gamma=0.99,
@@ -75,7 +68,18 @@ def atari_learn(env,
         frame_history_len=4,
         target_update_freq=10000,
         grad_norm_clipping=10,
-        double_q=True
+        double_q=True,
+        rew_file=False
+    )
+    dqn_params.update(kwargs)
+    dqn.learn(
+        env=env,
+        q_func=atari_model,
+        optimizer_spec=optimizer,
+        session=session,
+        exploration=exploration_schedule,
+        stopping_criterion=stopping_criterion,
+        **dqn_params
     )
     env.close()
 
