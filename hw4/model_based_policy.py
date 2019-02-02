@@ -72,7 +72,7 @@ class ModelBasedPolicy(object):
 
         normalized_state_delta = utils.build_mlp(
             input_layer=normalized_state_action,
-            output_dim=1,
+            output_dim=self._state_dim,
             scope='dynamics_func',
             n_layers=self._nn_layers,
             reuse=reuse
@@ -106,8 +106,8 @@ class ModelBasedPolicy(object):
         state_delta_pred = next_state_pred - state_ph
 
 
-        normalized_state_delta_label = utils.unnormalize(state_delta_label, mean=self._init_dataset.delta_state_mean, std=self._init_dataset.delta_state_std)
-        normalized_state_delta_pred = utils.unnormalize(state_delta_pred, mean=self._init_dataset.delta_state_mean, std=self._init_dataset.delta_state_std)
+        normalized_state_delta_label = utils.normalize(state_delta_label, mean=self._init_dataset.delta_state_mean, std=self._init_dataset.delta_state_std)
+        normalized_state_delta_pred = utils.normalize(state_delta_pred, mean=self._init_dataset.delta_state_mean, std=self._init_dataset.delta_state_std)
 
 
         loss = tf.losses.mean_squared_error(normalized_state_delta_label, normalized_state_delta_pred)
@@ -141,10 +141,31 @@ class ModelBasedPolicy(object):
                 (iii) Use tf.random_uniform(...) to generate the random action sequences
 
         """
-        ### PROBLEM 2
-        ### YOUR CODE HERE
-        raise NotImplementedError
+        N = self._num_random_action_selection
+        H = self._horizon
+        A = self._action_dim
+        first_actions = None
+        # N x S
+        current_state = tf.tile(state_ph, [N, 1])
+        # N x 1, but starts at 0
+        total_cost = 0
+        for t in range(H):
+            # N x A
+            actions = tf.random_uniform(
+                shape=(N, A),
+                minval=self._action_space_low,
+                maxval=self._action_space_high
+            )
+            if t == 0:
+                first_actions = actions
+            # N X S
+            next_state = self._dynamics_func(current_state, actions, reuse=True)
+            # N x 1
+            total_cost = total_cost + self._cost_fn(current_state, actions, next_state)
+            current_state = next_state
 
+        index = tf.argmin(total_cost, axis=0)
+        best_action = first_actions[index]
         return best_action
 
     def _setup_graph(self):
@@ -173,7 +194,7 @@ class ModelBasedPolicy(object):
         returns:
             loss: the loss from performing gradient descent
         """
-        [loss, _] = self.sess.run([self._loss, self._optimizer], feed_dict={
+        [loss, _] = self._sess.run([self._loss, self._optimizer], feed_dict={
             self._next_state_ph: next_states,
             self._state_ph: states,
             self._action_ph: actions
@@ -193,7 +214,10 @@ class ModelBasedPolicy(object):
         assert np.shape(state) == (self._state_dim,)
         assert np.shape(action) == (self._action_dim,)
 
-        next_state_pred = self._dynamics_func(self, state, action, reuse=True)
+        next_state_pred = self._sess.run(self._next_state_pred, feed_dict={
+            self._state_ph: [state],
+            self._action_ph: [action]
+        })[0]
 
         assert np.shape(next_state_pred) == (self._state_dim,)
         return next_state_pred
@@ -207,9 +231,9 @@ class ModelBasedPolicy(object):
         """
         assert np.shape(state) == (self._state_dim,)
 
-        ### PROBLEM 2
-        ### YOUR CODE HERE
-        raise NotImplementedError
+        best_action = self._sess.run(self._best_action, feed_dict={
+            self._state_ph: [state],
+        })
 
         assert np.shape(best_action) == (self._action_dim,)
         return best_action

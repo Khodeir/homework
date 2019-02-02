@@ -83,7 +83,7 @@ class ModelBasedRL(object):
         timeit.start('train policy')
 
         losses = []
-        for epoch in range(len(self._training_epochs)):
+        for epoch in range(self._training_epochs):
             for states, actions, next_states, _, _ in dataset.random_iterator(self._training_batch_size):
                 loss = self._policy.train_step(states, actions, next_states)
                 losses.append(loss)
@@ -92,6 +92,8 @@ class ModelBasedRL(object):
         logger.record_tabular('TrainingLossFinal', losses[-1])
 
         timeit.stop('train policy')
+
+        logger.dump_tabular(print_func=logger.info)
 
     def _log(self, dataset):
         timeit.stop('total')
@@ -122,7 +124,7 @@ class ModelBasedRL(object):
         for r_num, (states, actions, _, _, _) in enumerate(self._random_dataset.rollout_iterator()):
             pred_states = []
 
-            current_state = state[0]
+            current_state = states[0]
             for i in range(len(states)):
                 current_action = actions[i]
                 current_state = self._policy.predict(current_state, current_action)
@@ -154,14 +156,14 @@ class ModelBasedRL(object):
         self._log(self._random_dataset)
 
         logger.info('Training policy....')
-        ### PROBLEM 2
-        ### YOUR CODE HERE
-        raise NotImplementedError
+        self._train_policy(self._random_dataset)
 
         logger.info('Evaluating policy...')
-        ### PROBLEM 2
-        ### YOUR CODE HERE
-        raise NotImplementedError
+
+        eval_dataset = self._gather_rollouts(
+            self._policy,
+            self._num_onpolicy_rollouts
+        )
 
         logger.info('Trained policy')
         self._log(eval_dataset)
