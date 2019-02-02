@@ -39,10 +39,9 @@ class ModelBasedPolicy(object):
                 (a) the placeholders should have 2 dimensions,
                     in which the 1st dimension is variable length (i.e., None)
         """
-        ### PROBLEM 1
-        ### YOUR CODE HERE
-        raise NotImplementedError
-
+        state_ph = tf.placeholder(tf.float32, shape=(None, self._state_dim))
+        action_ph = tf.placeholder(tf.float32, shape=(None, self._action_dim))
+        next_state_ph = tf.placeholder(tf.float32, shape=(None, self._state_dim))
         return state_ph, action_ph, next_state_ph
 
     def _dynamics_func(self, state, action, reuse):
@@ -63,9 +62,25 @@ class ModelBasedPolicy(object):
                     the predicted next state
 
         """
-        ### PROBLEM 1
-        ### YOUR CODE HERE
-        raise NotImplementedError
+        normalized_state = utils.normalize(state, mean=self._init_dataset.state_mean, std=self._init_dataset.state_std)
+        normalized_action = utils.normalize(action, mean=self._init_dataset.action_mean, std=self._init_dataset.action_std)
+
+        normalized_state_action = tf.concat([
+            normalized_state,
+            normalized_action
+        ], axis=1)
+
+        normalized_state_delta = utils.build_mlp(
+            input_layer=normalized_state_action,
+            output_dim=1,
+            scope='dynamics_func',
+            n_layers=self._nn_layers,
+            reuse=reuse
+        )
+
+        state_delta = utils.unnormalize(normalized_state_delta, mean=self._init_dataset.delta_state_mean, std=self._init_dataset.delta_state_std)
+
+        next_state_pred = state + state_delta
 
         return next_state_pred
 
@@ -87,10 +102,16 @@ class ModelBasedPolicy(object):
                 (d) Create the optimizer by minimizing the loss using the Adam optimizer with self._learning_rate
 
         """
-        ### PROBLEM 1
-        ### YOUR CODE HERE
-        raise NotImplementedError
+        state_delta_label = next_state_ph - state_ph
+        state_delta_pred = next_state_pred - state_ph
 
+
+        normalized_state_delta_label = utils.unnormalize(state_delta_label, mean=self._init_dataset.delta_state_mean, std=self._init_dataset.delta_state_std)
+        normalized_state_delta_pred = utils.unnormalize(state_delta_pred, mean=self._init_dataset.delta_state_mean, std=self._init_dataset.delta_state_std)
+
+
+        loss = tf.losses.mean_squared_error(normalized_state_delta_label, normalized_state_delta_pred)
+        optimizer = tf.train.AdamOptimizer(learning_rate=self._learning_rate).minimize(loss)
         return loss, optimizer
 
     def _setup_action_selection(self, state_ph):
@@ -133,13 +154,12 @@ class ModelBasedPolicy(object):
         The variables returned will be set as class attributes (see __init__)
         """
         sess = tf.Session()
+        state_ph, action_ph, next_state_ph = self._setup_placeholders()
 
-        ### PROBLEM 1
-        ### YOUR CODE HERE
-        raise NotImplementedError
-        ### PROBLEM 2
-        ### YOUR CODE HERE
-        best_action = None
+        next_state_pred = self._dynamics_func(state_ph, action_ph, reuse=False)
+
+        loss, optimizer = self._setup_training(state_ph, next_state_ph, next_state_pred)
+        best_action = self._setup_action_selection(state_ph)
 
         sess.run(tf.global_variables_initializer())
 
@@ -153,10 +173,11 @@ class ModelBasedPolicy(object):
         returns:
             loss: the loss from performing gradient descent
         """
-        ### PROBLEM 1
-        ### YOUR CODE HERE
-        raise NotImplementedError
-
+        [loss, _] = self.sess.run([self._loss, self._optimizer], feed_dict={
+            self._next_state_ph: next_states,
+            self._state_ph: states,
+            self._action_ph: actions
+        })
         return loss
 
     def predict(self, state, action):
@@ -172,9 +193,7 @@ class ModelBasedPolicy(object):
         assert np.shape(state) == (self._state_dim,)
         assert np.shape(action) == (self._action_dim,)
 
-        ### PROBLEM 1
-        ### YOUR CODE HERE
-        raise NotImplementedError
+        next_state_pred = self._dynamics_func(self, state, action, reuse=True)
 
         assert np.shape(next_state_pred) == (self._state_dim,)
         return next_state_pred

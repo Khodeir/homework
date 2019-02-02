@@ -83,9 +83,10 @@ class ModelBasedRL(object):
         timeit.start('train policy')
 
         losses = []
-        ### PROBLEM 1
-        ### YOUR CODE HERE
-        raise NotImplementedError
+        for epoch in range(len(self._training_epochs)):
+            for states, actions, next_states, _, _ in dataset.random_iterator(self._training_batch_size):
+                loss = self._policy.train_step(states, actions, next_states)
+                losses.append(loss)
 
         logger.record_tabular('TrainingLossStart', losses[0])
         logger.record_tabular('TrainingLossFinal', losses[-1])
@@ -115,17 +116,17 @@ class ModelBasedRL(object):
                   predicted states and saves these to the experiment's folder. You do not need to modify this code.
         """
         logger.info('Training policy....')
-        ### PROBLEM 1
-        ### YOUR CODE HERE
-        raise NotImplementedError
+        self._train_policy(self._random_dataset)
 
         logger.info('Evaluating predictions...')
         for r_num, (states, actions, _, _, _) in enumerate(self._random_dataset.rollout_iterator()):
             pred_states = []
 
-            ### PROBLEM 1
-            ### YOUR CODE HERE
-            raise NotImplementedError
+            current_state = state[0]
+            for i in range(len(states)):
+                current_action = actions[i]
+                current_state = self._policy.predict(current_state, current_action)
+                pred_states.append(current_state)
 
             states = np.asarray(states)
             pred_states = np.asarray(pred_states)
