@@ -184,19 +184,16 @@ class ModelBasedRL(object):
             logger.info('Iteration {0}'.format(itr))
             logger.record_tabular('Itr', itr)
 
-            ### PROBLEM 3
-            ### YOUR CODE HERE
             logger.info('Training policy...')
-            raise NotImplementedError
+            self._train_policy(dataset)
 
-            ### PROBLEM 3
-            ### YOUR CODE HERE
             logger.info('Gathering rollouts...')
-            raise NotImplementedError
+            onpolicy_dataset = self._gather_rollouts(
+                self._policy,
+                self._num_onpolicy_rollouts
+            )
 
-            ### PROBLEM 3
-            ### YOUR CODE HERE
             logger.info('Appending dataset...')
-            raise NotImplementedError
+            dataset.append(onpolicy_dataset)
 
-            self._log(new_dataset)
+            self._log(dataset)
