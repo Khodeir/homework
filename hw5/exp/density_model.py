@@ -81,9 +81,6 @@ class RBF(Density_Model):
 
     def fit_data(self, data):
         """
-            ### PROBLEM 2
-            ### YOUR CODE HERE
-
             args:
                 data: list of states of shape (ob_dim)
 
@@ -93,15 +90,11 @@ class RBF(Density_Model):
                 self.means: np array (B, ob_dim)
         """
         B, ob_dim = len(data), len(data[0])
-        raise NotImplementedError
-        self.means = None
+        self.means = np.array(data)
         assert self.means.shape == (B, ob_dim)
 
     def get_prob(self, states):
         """
-            ### PROBLEM 2
-            ### YOUR CODE HERE
-
             given:
                 states: (b, ob_dim)
                     where b is the number of states we wish to get the
@@ -133,19 +126,19 @@ class RBF(Density_Model):
             assert states.ndim == self.means.ndim and ob_dim == replay_dim
 
             # 1. Compute deltas
-            # deltas = raise NotImplementedError
+            deltas = np.expand_dims(states, axis=1) - self.means
             assert deltas.shape == (b, B, ob_dim)
 
             # 2. Euclidean distance
-            # euc_dists = raise NotImplementedError
+            euc_dists = np.square(deltas).sum(2)
             assert euc_dists.shape == (b, B)
 
             # Gaussian
-            # gaussians = raise NotImplementedError
+            gaussians = np.exp(-euc_dists/(2. * np.square(self.sigma)))
             assert gaussians.shape == (b, B)
 
             # 4. Average
-            # densities = raise NotImplementedError
+            densities = gaussians.mean(1)
             assert densities.shape == (b,)
 
             return densities

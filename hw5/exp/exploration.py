@@ -76,25 +76,18 @@ class ContinuousExploration(Exploration):
 
     def bonus_function(self, prob):
         """
-            ### PROBLEM 2
-            ### YOUR CODE HERE
-
             args:
                 prob: np array (bsize,)
         """
-        raise NotImplementedError
+        return -np.log(prob)
 
     def compute_reward_bonus(self, states):
         """
-            ### PROBLEM 2
-            ### YOUR CODE HERE
-        
             args:
                 states: (bsize, ob_dim)
         """
-        raise NotImplementedError
-        prob = None
-        bonus = None
+        prob = self.density_model.get_prob(states)
+        bonus = self.bonus_function(prob)
         return bonus
 
 
