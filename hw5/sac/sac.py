@@ -114,6 +114,7 @@ class SAC:
             # note: tensorflow does the reparametrization trick for you here
             # by backpropagating through the sampled actions
             actions, log_pis = policy(self._observations_ph)
+            log_pis = tf.expand_dims(log_pis, axis=1)
             q_targets = q_function((self._observations_ph, actions))
             return tf.reduce_mean(self._alpha * log_pis - q_targets)
 
