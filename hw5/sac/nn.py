@@ -87,7 +87,7 @@ class GaussianPolicy(Network):
         super(GaussianPolicy, self).build(input_shape)
 
     def _squash_correction(self, raw_actions):
-        return tf.reduce_sum(tf.log(1 - tf.square(tf.nn.tanh(raw_actions)) + 1e-6), axis=1)
+        return tf.reduce_sum(tf.log(1 - tf.square(tf.nn.tanh(raw_actions)) + 1e-8), axis=1)
 
     def eval(self, observation):
         assert self.built and observation.ndim == 1

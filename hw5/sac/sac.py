@@ -105,6 +105,7 @@ class SAC:
     def _policy_loss_for(self, policy, q_function, q_function2, value_function):
         if not self._reparameterize:
             actions, log_pis = policy(self._observations_ph)
+            log_pis = tf.expand_dims(log_pis, axis=1)
             q_targets = q_function((self._observations_ph, actions))
             state_baseline = value_function(self._observations_ph)
             pseudo_advantage = tf.stop_gradient(self._alpha * log_pis - q_targets + state_baseline)
@@ -119,12 +120,12 @@ class SAC:
     def _value_function_loss_for(self, policy, q_function, q_function2, value_function):
         v_values = value_function(self._observations_ph)
         actions, logpis = policy(self._observations_ph)
-        v_targets_from_single_sample = q_function((self._observations_ph, actions)) - self._alpha * logpis
+        v_targets_from_single_sample = q_function((self._observations_ph, actions)) - self._alpha * tf.expand_dims(logpis, axis=1)
         return tf.losses.mean_squared_error(predictions=v_values, labels=v_targets_from_single_sample)
 
     def _q_function_loss_for(self, q_function, target_value_function):
         q_values = q_function((self._observations_ph, self._actions_ph))
-        q_targets = self._rewards_ph + (1 - self._terminals_ph) * self._discount*target_value_function(self._next_observations_ph)
+        q_targets = tf.expand_dims(self._rewards_ph, axis=1) + (1 - tf.expand_dims(self._terminals_ph, axis=1)) * self._discount*target_value_function(self._next_observations_ph)
         return tf.losses.mean_squared_error(predictions=q_values, labels=q_targets)
 
     def _create_target_update(self, source, target):
